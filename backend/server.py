@@ -541,11 +541,11 @@ async def get_followups(
 async def get_upcoming_followups(
     current_user: dict = Depends(get_current_user)
 ):
-    """Get follow-ups that are due soon or overdue"""
+    """Get follow-ups that are due soon or overdue with contact details"""
     now = datetime.now(timezone.utc).isoformat()
     
     followups = await db.followups.find(
-        {"status": "pending"},
+        {"status": {"$in": ["pending", "overdue"]}},
         {"_id": 0}
     ).sort("follow_up_date", 1).to_list(None)
     
@@ -553,16 +553,71 @@ async def get_upcoming_followups(
     overdue = []
     
     for followup in followups:
+        # Get contact details
+        contact = await db.contacts.find_one({"id": followup['contact_id']}, {"_id": 0})
+        if contact:
+            followup['contact'] = contact
+        
         if followup['follow_up_date'] < now:
-            followup['status'] = 'overdue'
+            if followup['status'] != 'overdue':
+                followup['status'] = 'overdue'
+                await db.followups.update_one({"id": followup['id']}, {"$set": {"status": "overdue"}})
             overdue.append(followup)
-            await db.followups.update_one({"id": followup['id']}, {"$set": {"status": "overdue"}})
         else:
             upcoming.append(followup)
     
     return {
         "overdue": overdue,
-        "upcoming": upcoming[:10]  # Next 10 upcoming
+        "upcoming": upcoming[:20]
+    }
+
+@api_router.get("/followups/by-date")
+async def get_followups_by_date(
+    date_filter: str,  # today, tomorrow, this_week, all
+    current_user: dict = Depends(get_current_user)
+):
+    """Get follow-ups filtered by date range"""
+    now = datetime.now(timezone.utc)
+    
+    # Calculate date range based on filter
+    if date_filter == "today":
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+    elif date_filter == "tomorrow":
+        tomorrow = now + timedelta(days=1)
+        start_date = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = tomorrow.replace(hour=23, minute=59, second=59, microsecond=999999)
+    elif date_filter == "this_week":
+        # Start from today
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        # End 7 days from now
+        end_date = (now + timedelta(days=7)).replace(hour=23, minute=59, second=59, microsecond=999999)
+    else:  # all
+        start_date = None
+        end_date = None
+    
+    # Build query
+    query = {"status": {"$in": ["pending", "overdue"]}}
+    if start_date and end_date:
+        query["follow_up_date"] = {
+            "$gte": start_date.isoformat(),
+            "$lte": end_date.isoformat()
+        }
+    
+    followups = await db.followups.find(query, {"_id": 0}).sort("follow_up_date", 1).to_list(None)
+    
+    # Add contact details to each follow-up
+    result = []
+    for followup in followups:
+        contact = await db.contacts.find_one({"id": followup['contact_id']}, {"_id": 0})
+        if contact:
+            followup['contact'] = contact
+            result.append(followup)
+    
+    return {
+        "filter": date_filter,
+        "count": len(result),
+        "followups": result
     }
 
 @api_router.put("/followups/{followup_id}/complete")

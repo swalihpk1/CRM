@@ -341,7 +341,7 @@ class SmartCRMTester:
         
         # Note: For file upload, we need to handle headers differently
         headers = {"Authorization": f"Bearer {self.token}"}
-        response = self.make_request("GET", "/contacts/preview", files=files, headers=headers)
+        response = self.make_request("POST", "/contacts/preview", files=files, headers=headers)
         
         if response is None:
             self.log_result("Excel Preview", False, "Request failed")

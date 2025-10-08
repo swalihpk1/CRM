@@ -324,9 +324,13 @@ async def preview_excel(
         contents = await file.read()
         df = pd.read_excel(io.BytesIO(contents), nrows=5)
         
+        # Replace NaN values with None for JSON serialization
+        df = df.replace({pd.NA: None, pd.NaT: None})
+        df = df.where(pd.notna(df), None)
+        
         return {
             "columns": df.columns.tolist(),
-            "sample_data": df.head().to_dict('records')
+            "sample_data": df.to_dict('records')
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

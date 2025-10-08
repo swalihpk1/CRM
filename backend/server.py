@@ -248,10 +248,16 @@ async def import_contacts(
 ):
     """Import contacts from Excel file with dynamic column mapping"""
     try:
-        # Parse column mapping
+        # Parse column mapping (format: {excel_column: crm_field})
         import json
         mapping = json.loads(column_mapping)
-        phone_column = mapping.get('phone')
+        
+        # Find which Excel column contains phone numbers
+        phone_column = None
+        for excel_col, crm_field in mapping.items():
+            if crm_field == 'phone':
+                phone_column = excel_col
+                break
         
         if not phone_column:
             raise HTTPException(status_code=400, detail="Phone column mapping is required")

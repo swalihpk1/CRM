@@ -310,7 +310,7 @@ async def import_contacts(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@api_router.get("/contacts/preview")
+@api_router.post("/contacts/preview")
 async def preview_excel(
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user)

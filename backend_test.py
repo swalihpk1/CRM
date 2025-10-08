@@ -378,12 +378,12 @@ class SmartCRMTester:
         df.to_excel(excel_buffer, index=False)
         excel_buffer.seek(0)
         
-        # Column mapping
+        # Column mapping - the key should be the Excel column name, value should be the field name
         column_mapping = {
-            'Phone': 'phone',
-            'Name': 'name',
-            'Email': 'email',
-            'Company': 'company'
+            'phone': 'Phone',  # This maps the 'phone' field to the 'Phone' Excel column
+            'name': 'Name',
+            'email': 'Email', 
+            'company': 'Company'
         }
         
         files = {'file': ('import_contacts.xlsx', excel_buffer.getvalue(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')}

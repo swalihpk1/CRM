@@ -283,7 +283,11 @@ async def import_contacts(
             contact_data = {}
             for excel_col, crm_field in mapping.items():
                 if excel_col in df.columns and pd.notna(row[excel_col]):
-                    contact_data[crm_field] = str(row[excel_col])
+                    # Convert to string and handle special values
+                    value = row[excel_col]
+                    if pd.isna(value) or value == '' or str(value).lower() in ['nan', 'none', 'null']:
+                        continue
+                    contact_data[crm_field] = str(value).strip()
             
             contact = Contact(
                 phone=phone,

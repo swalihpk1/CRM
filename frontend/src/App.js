@@ -599,66 +599,194 @@ const ContactsView = ({
 
 // Follow-ups View
 const FollowUpsView = ({ followups, onRefresh }) => {
+  const [dateFilter, setDateFilter] = useState('all');
+  const [filteredFollowups, setFilteredFollowups] = useState([]);
+  const [loading, setLoading] = useState(false);
+
   const completeFollowUp = async (id) => {
     try {
       await axios.put(`${API}/followups/${id}/complete`);
       onRefresh();
+      if (dateFilter !== 'all') {
+        fetchFilteredFollowups();
+      }
     } catch (error) {
       alert('Failed to complete follow-up');
     }
   };
 
+  const fetchFilteredFollowups = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get(`${API}/followups/by-date?date_filter=${dateFilter}`);
+      setFilteredFollowups(response.data.followups || []);
+    } catch (error) {
+      console.error('Failed to fetch filtered follow-ups:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (dateFilter !== 'all') {
+      fetchFilteredFollowups();
+    }
+  }, [dateFilter]);
+
+  const displayFollowups = dateFilter === 'all' 
+    ? [...followups.overdue, ...followups.upcoming] 
+    : filteredFollowups;
+
+  const getContactName = (followup) => {
+    if (followup.contact) {
+      return followup.contact.data?.name || followup.contact.data?.Name || followup.contact.phone;
+    }
+    return followup.contact_id;
+  };
+
+  const getContactPhone = (followup) => {
+    return followup.contact?.phone || 'N/A';
+  };
+
   return (
     <div>
-      <h2 className="text-3xl font-bold text-gray-800 mb-6">Follow-ups Management</h2>
-      
-      {/* Overdue */}
-      <div className="mb-8">
-        <h3 className="text-xl font-bold text-red-600 mb-4">⚠️ Overdue ({followups.overdue.length})</h3>
-        <div className="grid gap-4">
-          {followups.overdue.map(followup => (
-            <div key={followup.id} className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="font-medium text-gray-800">Contact ID: {followup.contact_id}</p>
-                  <p className="text-sm text-gray-600 mt-1">Due: {new Date(followup.follow_up_date).toLocaleString()}</p>
-                  {followup.notes && <p className="text-sm text-gray-700 mt-2">{followup.notes}</p>}
-                </div>
-                <button
-                  onClick={() => completeFollowUp(followup.id)}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-                >
-                  Complete
-                </button>
-              </div>
-            </div>
-          ))}
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-3xl font-bold text-gray-800">Follow-ups Management</h2>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setDateFilter('all')}
+            className={`px-4 py-2 rounded-lg transition ${dateFilter === 'all' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setDateFilter('today')}
+            className={`px-4 py-2 rounded-lg transition ${dateFilter === 'today' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+          >
+            Today
+          </button>
+          <button
+            onClick={() => setDateFilter('tomorrow')}
+            className={`px-4 py-2 rounded-lg transition ${dateFilter === 'tomorrow' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+          >
+            Tomorrow
+          </button>
+          <button
+            onClick={() => setDateFilter('this_week')}
+            className={`px-4 py-2 rounded-lg transition ${dateFilter === 'this_week' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+          >
+            This Week
+          </button>
         </div>
       </div>
 
-      {/* Upcoming */}
-      <div>
-        <h3 className="text-xl font-bold text-indigo-600 mb-4">📅 Upcoming ({followups.upcoming.length})</h3>
-        <div className="grid gap-4">
-          {followups.upcoming.map(followup => (
-            <div key={followup.id} className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="font-medium text-gray-800">Contact ID: {followup.contact_id}</p>
-                  <p className="text-sm text-gray-600 mt-1">Due: {new Date(followup.follow_up_date).toLocaleString()}</p>
-                  {followup.notes && <p className="text-sm text-gray-700 mt-2">{followup.notes}</p>}
-                </div>
-                <button
-                  onClick={() => completeFollowUp(followup.id)}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-                >
-                  Complete
-                </button>
+      {loading ? (
+        <div className="text-center py-12 text-gray-600">Loading follow-ups...</div>
+      ) : (
+        <>
+          {dateFilter === 'all' && (
+            <>
+              {/* Overdue */}
+              <div className="mb-8">
+                <h3 className="text-xl font-bold text-red-600 mb-4">⚠️ Overdue ({followups.overdue.length})</h3>
+                {followups.overdue.length === 0 ? (
+                  <p className="text-gray-500">No overdue follow-ups</p>
+                ) : (
+                  <div className="grid gap-4">
+                    {followups.overdue.map(followup => (
+                      <div key={followup.id} className="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <p className="font-bold text-lg text-gray-800">{getContactName(followup)}</p>
+                            <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
+                            <p className="text-sm text-red-600 font-medium mt-1">⏰ Due: {new Date(followup.follow_up_date).toLocaleString()}</p>
+                            {followup.notes && <p className="text-sm text-gray-700 mt-2 italic">"{followup.notes}"</p>}
+                          </div>
+                          <button
+                            onClick={() => completeFollowUp(followup.id)}
+                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold"
+                          >
+                            ✓ Complete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {/* Upcoming */}
+              <div>
+                <h3 className="text-xl font-bold text-indigo-600 mb-4">📅 Upcoming ({followups.upcoming.length})</h3>
+                {followups.upcoming.length === 0 ? (
+                  <p className="text-gray-500">No upcoming follow-ups</p>
+                ) : (
+                  <div className="grid gap-4">
+                    {followups.upcoming.map(followup => (
+                      <div key={followup.id} className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <p className="font-bold text-lg text-gray-800">{getContactName(followup)}</p>
+                            <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
+                            <p className="text-sm text-indigo-600 font-medium mt-1">⏰ Scheduled: {new Date(followup.follow_up_date).toLocaleString()}</p>
+                            {followup.notes && <p className="text-sm text-gray-700 mt-2 italic">"{followup.notes}"</p>}
+                          </div>
+                          <button
+                            onClick={() => completeFollowUp(followup.id)}
+                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold"
+                          >
+                            ✓ Complete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {dateFilter !== 'all' && (
+            <div>
+              <h3 className="text-xl font-bold text-indigo-600 mb-4">
+                {dateFilter === 'today' && '📅 Today\'s Follow-ups'}
+                {dateFilter === 'tomorrow' && '📅 Tomorrow\'s Follow-ups'}
+                {dateFilter === 'this_week' && '📅 This Week\'s Follow-ups'}
+                {' '}({filteredFollowups.length})
+              </h3>
+              {filteredFollowups.length === 0 ? (
+                <p className="text-gray-500">No follow-ups found for this period</p>
+              ) : (
+                <div className="grid gap-4">
+                  {filteredFollowups.map(followup => {
+                    const isOverdue = followup.status === 'overdue';
+                    return (
+                      <div key={followup.id} className={`${isOverdue ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'} border rounded-lg p-4`}>
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <p className="font-bold text-lg text-gray-800">{getContactName(followup)}</p>
+                            <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
+                            <p className={`text-sm font-medium mt-1 ${isOverdue ? 'text-red-600' : 'text-indigo-600'}`}>
+                              ⏰ {isOverdue ? 'Overdue:' : 'Scheduled:'} {new Date(followup.follow_up_date).toLocaleString()}
+                            </p>
+                            {followup.notes && <p className="text-sm text-gray-700 mt-2 italic">"{followup.notes}"</p>}
+                          </div>
+                          <button
+                            onClick={() => completeFollowUp(followup.id)}
+                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold"
+                          >
+                            ✓ Complete
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-      </div>
+          )}
+        </>
+      )}
     </div>
   );
 };

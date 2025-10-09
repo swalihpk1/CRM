@@ -176,23 +176,6 @@ const Dashboard = () => {
   const [loadingFollowups, setLoadingFollowups] = useState(false);
   const [allFollowups, setAllFollowups] = useState([]);
 
-  useEffect(() => {
-    fetchStats();
-    fetchContacts(0, true);
-    fetchFollowups();
-    fetchPaginatedFollowups(0, 'all', true);
-    fetchActivityLogs();
-    
-    // Request notification permission
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-    
-    // Check for follow-ups every minute
-    const interval = setInterval(checkFollowupAlerts, 60000);
-    return () => clearInterval(interval);
-  }, []);
-
   const fetchStats = async () => {
     try {
       const response = await axios.get(`${API}/contacts/count`);
@@ -231,23 +214,50 @@ const Dashboard = () => {
     }
   };
 
-  const fetchFollowups = async () => {
+  const fetchFollowups = useCallback(async () => {
     try {
       const response = await axios.get(`${API}/followups/upcoming`);
       setFollowups(response.data);
     } catch (error) {
       console.error('Failed to fetch follow-ups:', error);
     }
-  };
+  }, []);
 
-  const fetchActivityLogs = async () => {
+  const fetchActivityLogs = useCallback(async () => {
     try {
       const response = await axios.get(`${API}/activity-logs?limit=50`);
       setActivityLogs(response.data);
     } catch (error) {
       console.error('Failed to fetch activity logs:', error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchStats();
+    fetchContacts(0, true);
+    fetchFollowups();
+    fetchPaginatedFollowups(0, 'all', true);
+    fetchActivityLogs();
+    
+    // Request notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+    
+    // Check for follow-ups every minute
+    const interval = setInterval(checkFollowupAlerts, 60000);
+    return () => clearInterval(interval);
+  }, [fetchFollowups, fetchActivityLogs]);
+  
+  // Make fetchFollowups and fetchActivityLogs available globally for live updates
+  useEffect(() => {
+    window.refreshFollowups = fetchFollowups;
+    window.refreshActivityLogs = fetchActivityLogs;
+    return () => {
+      delete window.refreshFollowups;
+      delete window.refreshActivityLogs;
+    };
+  }, [fetchFollowups, fetchActivityLogs]);
 
   const loadMoreContacts = useCallback(async () => {
     if (hasMoreContacts && !loadingContacts) {
@@ -324,6 +334,10 @@ const Dashboard = () => {
       await axios.post(`${API}/contacts/${contactId}/call`);
       alert('Call logged successfully!');
       fetchActivityLogs();
+      // Also refresh global activity logs if available
+      if (window.refreshActivityLogs) {
+        window.refreshActivityLogs();
+      }
     } catch (error) {
       alert('Failed to log call');
     }
@@ -336,22 +350,61 @@ const Dashboard = () => {
       await axios.delete(`${API}/contacts/${contactId}`);
       resetContacts();
       fetchStats();
+      fetchActivityLogs();
       setSelectedContact(null);
     } catch (error) {
       alert('Failed to delete contact');
     }
   };
 
-  const handleUpdateStatus = async (contactId, status) => {
+  const handleBulkDeleteContacts = async (contactIds) => {
+    if (!window.confirm(`Are you sure you want to delete ${contactIds.length} selected contact${contactIds.length !== 1 ? 's' : ''}?`)) return;
+    
     try {
-      await axios.put(`${API}/contacts/${contactId}`, { status });
+      // Delete all contacts in parallel
+      const deletePromises = contactIds.map(contactId => 
+        axios.delete(`${API}/contacts/${contactId}`)
+      );
+      
+      await Promise.all(deletePromises);
+      
+      // Refresh data after successful deletion
       resetContacts();
       fetchStats();
+      fetchActivityLogs();
+      
+      return true; // Success
+    } catch (error) {
+      console.error('Bulk delete error:', error);
+      alert('Failed to delete some contacts. Please try again.');
+      return false; // Failure
+    }
+  };
+
+  const handleUpdateStatus = async (contactId, status) => {
+    try {
+      // Optimistically update the contact in the list immediately
+      setContacts(prevContacts => 
+        prevContacts.map(contact => 
+          contact.id === contactId ? { ...contact, status } : contact
+        )
+      );
+      
+      // Update selected contact if it's the one being modified
       if (selectedContact && selectedContact.id === contactId) {
         setSelectedContact({ ...selectedContact, status });
       }
+      
+      // Make API call
+      await axios.put(`${API}/contacts/${contactId}`, { status });
+      
+      // Update stats and activity logs to reflect the change
+      fetchStats();
+      fetchActivityLogs();
     } catch (error) {
       alert('Failed to update status');
+      // Revert optimistic update on error
+      resetContacts();
     }
   };
 
@@ -428,6 +481,7 @@ const Dashboard = () => {
               onLogCall={handleLogCall}
               onUpdateStatus={handleUpdateStatus}
               onDeleteContact={handleDeleteContact}
+              onBulkDeleteContacts={handleBulkDeleteContacts}
               onLoadMore={loadMoreContacts}
               hasMore={hasMoreContacts}
               loading={loadingContacts}
@@ -445,7 +499,7 @@ const Dashboard = () => {
             />
           )}
           {view === 'import' && (
-            <ImportView onImportComplete={() => { resetContacts(); fetchStats(); }} />
+            <ImportView onImportComplete={() => { resetContacts(); fetchStats(); fetchActivityLogs(); }} />
           )}
           {view === 'activity' && <ActivityLogView logs={activityLogs} />}
         </div>
@@ -457,7 +511,22 @@ const Dashboard = () => {
           contact={selectedContact}
           onClose={() => setSelectedContact(null)}
           onUpdate={(updates) => {
+            // Optimistically update the selected contact
+            setSelectedContact(prev => ({ ...prev, ...updates }));
+            
+            // Update in contacts list immediately
+            setContacts(prevContacts => 
+              prevContacts.map(contact => 
+                contact.id === selectedContact.id ? { ...contact, ...updates } : contact
+              )
+            );
+            
+            // Make API call
             axios.put(`${API}/contacts/${selectedContact.id}`, updates).then(() => {
+              fetchStats();
+              fetchActivityLogs();
+            }).catch(() => {
+              // Revert on error
               resetContacts();
               setSelectedContact(null);
             });
@@ -465,6 +534,7 @@ const Dashboard = () => {
           onDelete={() => handleDeleteContact(selectedContact.id)}
           onLogCall={() => handleLogCall(selectedContact.id)}
           onUpdateStatus={(status) => handleUpdateStatus(selectedContact.id, status)}
+          onFollowupCreated={fetchFollowups}
         />
       )}
 
@@ -473,10 +543,19 @@ const Dashboard = () => {
         <ContactFormModal
           onClose={() => setShowContactModal(false)}
           onSave={async (data) => {
-            await axios.post(`${API}/contacts`, data);
-            resetContacts();
-            fetchStats();
-            setShowContactModal(false);
+            try {
+              await axios.post(`${API}/contacts`, data);
+              resetContacts();
+              fetchStats();
+              fetchActivityLogs();
+              setShowContactModal(false);
+            } catch (error) {
+              if (error.response?.status === 400 && error.response?.data?.detail?.includes('already exists')) {
+                alert(`A contact with phone number ${data.phone} already exists in the system.`);
+              } else {
+                alert('Failed to create contact: ' + (error.response?.data?.detail || error.message));
+              }
+            }
           }}
         />
       )}
@@ -486,7 +565,7 @@ const Dashboard = () => {
 
 // Dashboard View
 const DashboardView = ({ stats, followups }) => {
-  const statuses = ['Called', 'Not Attending', 'Follow-up', 'Interested', 'Not Interested', 'Irrelevant'];
+  const statuses = ['None', 'Called', 'Not Attending', 'Follow-up', 'Interested', 'Not Interested', 'Irrelevant', 'Logged In'];
   
   return (
     <div>
@@ -498,12 +577,28 @@ const DashboardView = ({ stats, followups }) => {
           <p className="text-4xl font-bold text-gray-800">{stats.total}</p>
         </div>
         
-        {statuses.map(status => (
-          <div key={status} className="bg-white rounded-xl shadow-md p-6">
-            <h3 className="text-gray-600 text-sm font-medium mb-2">{status}</h3>
-            <p className="text-3xl font-bold text-gray-800">{stats.by_status[status] || 0}</p>
-          </div>
-        ))}
+        {statuses.map(status => {
+          const getStatusColors = (status) => {
+            switch(status) {
+              case 'None': return { bg: 'bg-gray-50', border: 'border-l-gray-400', text: 'text-gray-700', count: 'text-gray-800' };
+              case 'Called': return { bg: 'bg-blue-50', border: 'border-l-blue-500', text: 'text-blue-700', count: 'text-blue-800' };
+              case 'Not Attending': return { bg: 'bg-orange-50', border: 'border-l-orange-500', text: 'text-orange-700', count: 'text-orange-800' };
+              case 'Follow-up': return { bg: 'bg-yellow-50', border: 'border-l-yellow-500', text: 'text-yellow-700', count: 'text-yellow-800' };
+              case 'Interested': return { bg: 'bg-green-50', border: 'border-l-green-500', text: 'text-green-700', count: 'text-green-800' };
+              case 'Not Interested': return { bg: 'bg-red-50', border: 'border-l-red-500', text: 'text-red-700', count: 'text-red-800' };
+              case 'Irrelevant': return { bg: 'bg-purple-50', border: 'border-l-purple-500', text: 'text-purple-700', count: 'text-purple-800' };
+              case 'Logged In': return { bg: 'bg-teal-50', border: 'border-l-teal-600', text: 'text-teal-700', count: 'text-teal-800' };
+              default: return { bg: 'bg-white', border: 'border-l-gray-400', text: 'text-gray-600', count: 'text-gray-800' };
+            }
+          };
+          const colors = getStatusColors(status);
+          return (
+            <div key={status} className={`${colors.bg} rounded-xl shadow-md p-6 border-l-4 ${colors.border}`}>
+              <h3 className={`${colors.text} text-sm font-medium mb-2`}>{status}</h3>
+              <p className={`text-3xl font-bold ${colors.count}`}>{stats.by_status[status] || 0}</p>
+            </div>
+          );
+        })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -559,11 +654,34 @@ const ContactsView = ({
   onLogCall,
   onUpdateStatus,
   onDeleteContact,
+  onBulkDeleteContacts,
   onLoadMore,
   hasMore,
   loading
 }) => {
-  const statuses = ['Called', 'Not Attending', 'Follow-up', 'Interested', 'Not Interested', 'Irrelevant'];
+  const statuses = ['None', 'Called', 'Not Attending', 'Follow-up', 'Interested', 'Not Interested', 'Irrelevant', 'Logged In'];
+  const [selectedContacts, setSelectedContacts] = useState(new Set());
+
+  const handleSelectAll = (checked) => {
+    if (checked) {
+      setSelectedContacts(new Set(contacts.map(contact => contact.id)));
+    } else {
+      setSelectedContacts(new Set());
+    }
+  };
+
+  const handleSelectContact = (contactId, checked) => {
+    const newSelected = new Set(selectedContacts);
+    if (checked) {
+      newSelected.add(contactId);
+    } else {
+      newSelected.delete(contactId);
+    }
+    setSelectedContacts(newSelected);
+  };
+
+  const isAllSelected = contacts.length > 0 && selectedContacts.size === contacts.length;
+  const isIndeterminate = selectedContacts.size > 0 && selectedContacts.size < contacts.length;
 
   useEffect(() => {
     let timeoutId = null;
@@ -594,6 +712,15 @@ const ContactsView = ({
     };
   }, [hasMore, loading, onLoadMore]);
   
+  // Clear selections when contacts change
+  useEffect(() => {
+    setSelectedContacts(prev => {
+      const currentContactIds = new Set(contacts.map(c => c.id));
+      const filteredSelection = new Set([...prev].filter(id => currentContactIds.has(id)));
+      return filteredSelection;
+    });
+  }, [contacts]);
+  
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -618,14 +745,82 @@ const ContactsView = ({
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
         >
-          <option value="">All Statuses</option>
-          {statuses.map(status => (
-            <option key={status} value={status}>{status}</option>
-          ))}
+          <option value="" className="text-gray-500">All Statuses</option>
+          <option value="None" className="text-gray-700">🔘 None</option>
+          <option value="Called" className="text-blue-700">📞 Called</option>
+          <option value="Not Attending" className="text-orange-700">⏸️ Not Attending</option>
+          <option value="Follow-up" className="text-yellow-700">⏰ Follow-up</option>
+          <option value="Interested" className="text-green-700">✅ Interested</option>
+          <option value="Not Interested" className="text-red-700">❌ Not Interested</option>
+          <option value="Irrelevant" className="text-purple-700">🚫 Irrelevant</option>
+          <option value="Logged In" className="text-teal-700">🎯 Logged In</option>
         </select>
       </div>
+
+      {/* Bulk Actions Bar */}
+      {selectedContacts.size > 0 && (
+        <div className="bg-indigo-50 border-l-4 border-indigo-400 p-4 mb-4 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <span className="text-indigo-800 font-medium">
+                {selectedContacts.size} contact{selectedContacts.size !== 1 ? 's' : ''} selected
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                onChange={async (e) => {
+                  if (e.target.value) {
+                    const newStatus = e.target.value;
+                    const contactIds = Array.from(selectedContacts);
+                    
+                    // Update all selected contacts immediately
+                    for (const contactId of contactIds) {
+                      const contact = contacts.find(c => c.id === contactId);
+                      if (contact) {
+                        await onUpdateStatus(contactId, newStatus);
+                      }
+                    }
+                    
+                    e.target.value = '';
+                    setSelectedContacts(new Set()); // Clear selection after update
+                  }
+                }}
+                className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 bg-white"
+              >
+                <option value="" className="text-gray-500">Update Status</option>
+                <option value="None" className="text-gray-700">🔘 None</option>
+                <option value="Called" className="text-blue-700">📞 Called</option>
+                <option value="Not Attending" className="text-orange-700">⏸️ Not Attending</option>
+                <option value="Follow-up" className="text-yellow-700">⏰ Follow-up</option>
+                <option value="Interested" className="text-green-700">✅ Interested</option>
+                <option value="Not Interested" className="text-red-700">❌ Not Interested</option>
+                <option value="Irrelevant" className="text-purple-700">🚫 Irrelevant</option>
+                <option value="Logged In" className="text-teal-700">🎯 Logged In</option>
+              </select>
+              <button
+                onClick={async () => {
+                  const contactIds = Array.from(selectedContacts);
+                  const success = await onBulkDeleteContacts(contactIds);
+                  if (success) {
+                    setSelectedContacts(new Set());
+                  }
+                }}
+                className="px-3 py-1 bg-red-600 text-white text-sm rounded-md hover:bg-red-700 transition"
+              >
+                Delete Selected
+              </button>
+              <button
+                onClick={() => setSelectedContacts(new Set())}
+                className="px-3 py-1 bg-gray-500 text-white text-sm rounded-md hover:bg-gray-600 transition"
+              >
+                Clear Selection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Contacts Table */}
       <div className="bg-white rounded-xl shadow-md overflow-hidden">
@@ -633,6 +828,17 @@ const ContactsView = ({
           <table className="w-full min-w-max">
             <thead className="bg-gray-50 border-b">
               <tr>
+                <th className="px-6 py-3 text-left whitespace-nowrap min-w-[50px]">
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = isIndeterminate;
+                    }}
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                  />
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[120px]">Phone</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[150px]">Shop Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[200px]">Address</th>
@@ -645,7 +851,22 @@ const ContactsView = ({
             </thead>
           <tbody className="divide-y divide-gray-200">
             {contacts.map(contact => (
-              <tr key={contact.id} className="hover:bg-gray-50 cursor-pointer">
+              <tr 
+                key={contact.id} 
+                className={`hover:bg-gray-50 cursor-pointer ${selectedContacts.has(contact.id) ? 'bg-indigo-50' : ''}`}
+                onClick={() => onSelectContact(contact)}
+              >
+                <td className="px-6 py-4 whitespace-nowrap min-w-[50px]">
+                  <input
+                    type="checkbox"
+                    checked={selectedContacts.has(contact.id)}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      handleSelectContact(contact.id, e.target.checked);
+                    }}
+                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                  />
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap min-w-[120px]">
                   <div className="flex items-center gap-2">
                     <span className="text-gray-900">{contact.phone}</span>
@@ -675,19 +896,31 @@ const ContactsView = ({
                   {contact.data.state || contact.data.State || contact.data['State'] || '-'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap min-w-[120px]">
-                  <select
-                    value={contact.status}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      onUpdateStatus(contact.id, e.target.value);
-                    }}
-                    className="px-3 py-1 rounded-full text-sm border border-gray-300"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {statuses.map(status => (
-                      <option key={status} value={status}>{status}</option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <select
+                      value={contact.status}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        onUpdateStatus(contact.id, e.target.value);
+                      }}
+                      className={`px-3 py-1 rounded-full text-sm border-0 font-medium focus:ring-2 focus:ring-indigo-500 ${
+                        contact.status === 'None' ? 'bg-gray-100 text-gray-700' :
+                        contact.status === 'Called' ? 'bg-blue-100 text-blue-800' :
+                        contact.status === 'Not Attending' ? 'bg-orange-100 text-orange-800' :
+                        contact.status === 'Follow-up' ? 'bg-yellow-100 text-yellow-800' :
+                        contact.status === 'Interested' ? 'bg-green-100 text-green-800' :
+                        contact.status === 'Not Interested' ? 'bg-red-100 text-red-800' :
+                        contact.status === 'Irrelevant' ? 'bg-purple-100 text-purple-800' :
+                        contact.status === 'Logged In' ? 'bg-teal-100 text-teal-800' :
+                        'bg-gray-100 text-gray-700'
+                      }`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {statuses.map(status => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+                  </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-gray-700 min-w-[150px]">
                   {contact.data.category || contact.data.Category || contact.data['Category'] || '-'}
@@ -795,6 +1028,14 @@ const FollowUpsView = ({
       onRefresh();
       if (dateFilter !== 'all') {
         fetchFilteredFollowups();
+      }
+      
+      // Also refresh dashboard follow-ups and activity logs for live updates
+      if (window.refreshFollowups) {
+        window.refreshFollowups();
+      }
+      if (window.refreshActivityLogs) {
+        window.refreshActivityLogs();
       }
     } catch (error) {
       alert('Failed to complete follow-up');
@@ -1193,54 +1434,178 @@ const ImportView = ({ onImportComplete }) => {
 
 // Activity Log View
 const ActivityLogView = ({ logs }) => {
+  // Format date in Indian format (DD/MM/YYYY, HH:MM:SS AM/PM)
+  const formatIndianDate = (timestamp) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-IN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+  };
+
+  // Format action with better descriptions
+  const formatAction = (log) => {
+    switch (log.action) {
+      case 'Updated contact':
+        if (log.details && log.details.includes('status')) {
+          return '📝 Status Updated';
+        }
+        return '✏️ Contact Updated';
+      case 'Created contact':
+        return '➕ Contact Created';
+      case 'Deleted contact':
+        return '🗑️ Contact Deleted';
+      case 'Created follow-up':
+        return '📅 Follow-up Scheduled';
+      case 'Completed follow-up':
+        return '✅ Follow-up Completed';
+      case 'Logged call':
+        return '📞 Call Logged';
+      case 'Added note':
+        return '📝 Note Added';
+      case 'Imported contacts':
+        return '📤 Contacts Imported';
+      default:
+        return log.action;
+    }
+  };
+
+  // Format target with better context
+  const formatTarget = (log) => {
+    if (log.target) {
+      // If target looks like a phone number, format it nicely
+      if (log.target.startsWith('+91') || /^\+?\d+/.test(log.target)) {
+        return `📱 ${log.target}`;
+      }
+      // For follow-up completed actions, show "Follow-up Task" instead of UUID
+      if (log.action === 'Completed follow-up' && log.target.length === 36 && log.target.includes('-')) {
+        return '✅ Follow-up Task';
+      }
+      // If target is a UUID (for other follow-up actions), try to show contact info
+      if (log.target.length === 36 && log.target.includes('-')) {
+        return `📋 Follow-up`;
+      }
+      return log.target;
+    }
+    return 'N/A';
+  };
+
+  // Format details with more context
+  const formatDetails = (log) => {
+    if (!log.details || log.details === 'N/A') {
+      // For follow-up completions, try to show more context
+      if (log.action === 'Completed follow-up' && log.target) {
+        return 'Follow-up task completed successfully';
+      }
+      return 'N/A';
+    }
+
+    // Parse status updates to show old -> new status
+    if (log.action === 'Updated contact' && log.details.includes('status')) {
+      return '📊 Contact status changed';
+    }
+
+    // Format follow-up scheduling details
+    if (log.action === 'Created follow-up' && log.details.includes('Scheduled for')) {
+      const scheduledTime = log.details.match(/Scheduled for (.+)/)?.[1];
+      if (scheduledTime) {
+        const date = new Date(scheduledTime);
+        return `⏰ Scheduled for ${formatIndianDate(date)}`;
+      }
+    }
+
+    return log.details;
+  };
+
+  // Get row styling based on action type
+  const getRowStyling = (action) => {
+    switch (action) {
+      case 'Created contact':
+      case 'Created follow-up':
+        return 'bg-green-50 hover:bg-green-100 border-l-4 border-green-400';
+      case 'Updated contact':
+        return 'bg-blue-50 hover:bg-blue-100 border-l-4 border-blue-400';
+      case 'Deleted contact':
+        return 'bg-red-50 hover:bg-red-100 border-l-4 border-red-400';
+      case 'Completed follow-up':
+        return 'bg-purple-50 hover:bg-purple-100 border-l-4 border-purple-400';
+      case 'Logged call':
+        return 'bg-yellow-50 hover:bg-yellow-100 border-l-4 border-yellow-400';
+      default:
+        return 'hover:bg-gray-50';
+    }
+  };
+
   return (
     <div>
       <h2 className="text-3xl font-bold text-gray-800 mb-6">Activity Log</h2>
       
       <div className="bg-white rounded-xl shadow-md overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Timestamp</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Details</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {logs.map(log => (
-              <tr key={log.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                  {new Date(log.timestamp).toLocaleString()}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                  {log.user_email}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-800">
-                  {log.action}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                  {log.target || 'N/A'}
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-600">
-                  {log.details || 'N/A'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {logs.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            <p className="text-lg">No activity logs yet</p>
+            <p className="text-sm mt-2">Actions like creating contacts, updating statuses, and scheduling follow-ups will appear here</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date & Time</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact/Target</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {logs.map(log => (
+                  <tr key={log.id} className={getRowStyling(log.action)}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-mono">
+                      {formatIndianDate(log.timestamp)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      <div className="flex items-center">
+                        <div className="w-2 h-2 bg-indigo-500 rounded-full mr-2"></div>
+                        {log.user_email.split('@')[0]}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-800">
+                      {formatAction(log)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {formatTarget(log)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
 // Contact Detail Modal
-const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, onUpdateStatus }) => {
+const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, onUpdateStatus, onFollowupCreated }) => {
   const [notes, setNotes] = useState([]);
   const [newNote, setNewNote] = useState('');
   const [followUpDate, setFollowUpDate] = useState('');
   const [followUpNotes, setFollowUpNotes] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedContact, setEditedContact] = useState({
+    phone: contact.phone,
+    shop_name: contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '',
+    address: contact.data.address || contact.data.Address || contact.data['Address'] || '',
+    city: contact.data.city || contact.data.City || contact.data['City'] || '',
+    state: contact.data.state || contact.data.State || contact.data['State'] || '',
+    category: contact.data.category || contact.data.Category || contact.data['Category'] || ''
+  });
 
   useEffect(() => {
     fetchNotes();
@@ -1259,14 +1624,37 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
     if (!newNote.trim()) return;
 
     try {
-      await axios.post(`${API}/notes`, {
-        contact_id: contact.id,
-        content: newNote
-      });
+      // Optimistically add the note to the list immediately
+      const tempNote = {
+        id: Date.now(), // Temporary ID
+        content: newNote,
+        created_at: new Date().toISOString()
+      };
+      
+      setNotes(prevNotes => [tempNote, ...prevNotes]);
       setNewNote('');
-      fetchNotes();
+      
+      // Make API call
+      const response = await axios.post(`${API}/notes`, {
+        contact_id: contact.id,
+        content: tempNote.content
+      });
+      
+      // Replace temp note with real note from server
+      setNotes(prevNotes => 
+        prevNotes.map(note => 
+          note.id === tempNote.id ? response.data : note
+        )
+      );
+      
+      // Refresh activity logs for live updates
+      if (window.refreshActivityLogs) {
+        window.refreshActivityLogs();
+      }
     } catch (error) {
       alert('Failed to add note');
+      // Remove the optimistic note on error
+      setNotes(prevNotes => prevNotes.filter(note => note.id !== tempNote.id));
     }
   };
 
@@ -1285,12 +1673,55 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
       alert('Follow-up created successfully!');
       setFollowUpDate('');
       setFollowUpNotes('');
+      
+      // Refresh follow-ups data immediately
+      if (onFollowupCreated) {
+        onFollowupCreated();
+      }
+      
+      // Refresh activity logs for live updates
+      if (window.refreshActivityLogs) {
+        window.refreshActivityLogs();
+      }
     } catch (error) {
       alert('Failed to create follow-up');
     }
   };
 
-  const statuses = ['Called', 'Not Attending', 'Follow-up', 'Interested', 'Not Interested', 'Irrelevant'];
+  const handleSaveEdit = async () => {
+    try {
+      const updates = {
+        phone: editedContact.phone,
+        data: {
+          shop_name: editedContact.shop_name || undefined,
+          address: editedContact.address || undefined,
+          city: editedContact.city || undefined,
+          state: editedContact.state || undefined,
+          category: editedContact.category || undefined
+        }
+      };
+      
+      await onUpdate(updates);
+      setIsEditing(false);
+      alert('Contact updated successfully!');
+    } catch (error) {
+      alert('Failed to update contact');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditedContact({
+      phone: contact.phone,
+      shop_name: contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '',
+      address: contact.data.address || contact.data.Address || contact.data['Address'] || '',
+      city: contact.data.city || contact.data.City || contact.data['City'] || '',
+      state: contact.data.state || contact.data.State || contact.data['State'] || '',
+      category: contact.data.category || contact.data.Category || contact.data['Category'] || ''
+    });
+    setIsEditing(false);
+  };
+
+  const statuses = ['None', 'Called', 'Not Attending', 'Follow-up', 'Interested', 'Not Interested', 'Irrelevant', 'Logged In'];
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -1303,41 +1734,144 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
         <div className="p-6 space-y-6">
           {/* Contact Info */}
           <div className="bg-gray-50 rounded-lg p-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">Contact Information</h3>
+              <div className="flex gap-2">
+                {!isEditing ? (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="px-3 py-1 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700 transition"
+                  >
+                    ✏️ Edit
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={handleSaveEdit}
+                      className="px-3 py-1 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 transition"
+                    >
+                      ✅ Save
+                    </button>
+                    <button
+                      onClick={handleCancelEdit}
+                      className="px-3 py-1 bg-gray-500 text-white text-sm rounded-md hover:bg-gray-600 transition"
+                    >
+                      ✖️ Cancel
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm text-gray-600">Phone</label>
-                <p className="font-medium">{contact.phone}</p>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={editedContact.phone}
+                    onChange={(e) => setEditedContact({ ...editedContact, phone: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1 font-medium"
+                    placeholder="Phone number"
+                  />
+                ) : (
+                  <p className="font-medium">{contact.phone}</p>
+                )}
               </div>
               <div>
                 <label className="text-sm text-gray-600">Shop Name</label>
-                <p className="font-medium">{contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '-'}</p>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={editedContact.shop_name}
+                    onChange={(e) => setEditedContact({ ...editedContact, shop_name: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1 font-medium"
+                    placeholder="Shop name"
+                  />
+                ) : (
+                  <p className="font-medium">{contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '-'}</p>
+                )}
               </div>
               <div>
                 <label className="text-sm text-gray-600">Address</label>
-                <p className="font-medium">{contact.data.address || contact.data.Address || contact.data['Address'] || '-'}</p>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={editedContact.address}
+                    onChange={(e) => setEditedContact({ ...editedContact, address: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1 font-medium"
+                    placeholder="Address"
+                  />
+                ) : (
+                  <p className="font-medium">{contact.data.address || contact.data.Address || contact.data['Address'] || '-'}</p>
+                )}
               </div>
               <div>
                 <label className="text-sm text-gray-600">City</label>
-                <p className="font-medium">{contact.data.city || contact.data.City || contact.data['City'] || '-'}</p>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={editedContact.city}
+                    onChange={(e) => setEditedContact({ ...editedContact, city: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1 font-medium"
+                    placeholder="City"
+                  />
+                ) : (
+                  <p className="font-medium">{contact.data.city || contact.data.City || contact.data['City'] || '-'}</p>
+                )}
               </div>
               <div>
                 <label className="text-sm text-gray-600">State</label>
-                <p className="font-medium">{contact.data.state || contact.data.State || contact.data['State'] || '-'}</p>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={editedContact.state}
+                    onChange={(e) => setEditedContact({ ...editedContact, state: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1 font-medium"
+                    placeholder="State"
+                  />
+                ) : (
+                  <p className="font-medium">{contact.data.state || contact.data.State || contact.data['State'] || '-'}</p>
+                )}
               </div>
               <div>
                 <label className="text-sm text-gray-600">Category</label>
-                <p className="font-medium">{contact.data.category || contact.data.Category || contact.data['Category'] || '-'}</p>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={editedContact.category}
+                    onChange={(e) => setEditedContact({ ...editedContact, category: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1 font-medium"
+                    placeholder="Category"
+                  />
+                ) : (
+                  <p className="font-medium">{contact.data.category || contact.data.Category || contact.data['Category'] || '-'}</p>
+                )}
               </div>
               <div>
                 <label className="text-sm text-gray-600">Status</label>
                 <select
                   value={contact.status}
                   onChange={(e) => onUpdateStatus(e.target.value)}
-                  className="w-full px-3 py-1 border border-gray-300 rounded-lg mt-1"
+                  className={`w-full px-3 py-2 border border-gray-300 rounded-lg mt-1 font-medium ${
+                    contact.status === 'None' ? 'bg-gray-50 text-gray-700' :
+                    contact.status === 'Called' ? 'bg-blue-50 text-blue-800' :
+                    contact.status === 'Not Attending' ? 'bg-orange-50 text-orange-800' :
+                    contact.status === 'Follow-up' ? 'bg-yellow-50 text-yellow-800' :
+                    contact.status === 'Interested' ? 'bg-green-50 text-green-800' :
+                    contact.status === 'Not Interested' ? 'bg-red-50 text-red-800' :
+                    contact.status === 'Irrelevant' ? 'bg-purple-50 text-purple-800' :
+                    contact.status === 'Logged In' ? 'bg-teal-50 text-teal-800' :
+                    'bg-gray-50 text-gray-700'
+                  }`}
                 >
-                  {statuses.map(status => (
-                    <option key={status} value={status}>{status}</option>
-                  ))}
+                  <option value="None" className="text-gray-700">🔘 None - No action taken</option>
+                  <option value="Called" className="text-blue-700">📞 Called - Contact established</option>
+                  <option value="Not Attending" className="text-orange-700">⏸️ Not Attending - Unavailable/Busy</option>
+                  <option value="Follow-up" className="text-yellow-700">⏰ Follow-up - Needs reconnection</option>
+                  <option value="Interested" className="text-green-700">✅ Interested - Positive response</option>
+                  <option value="Not Interested" className="text-red-700">❌ Not Interested - Declined</option>
+                  <option value="Irrelevant" className="text-purple-700">🚫 Irrelevant - Wrong target</option>
+                  <option value="Logged In" className="text-teal-700">🎯 Logged In - Purchased & Active</option>
                 </select>
               </div>
               <div>

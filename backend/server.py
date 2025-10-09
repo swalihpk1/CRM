@@ -61,7 +61,7 @@ class Contact(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     phone: str
-    status: str = "Follow-up"
+    status: str = "None"
     data: Dict[str, Any] = {}  # Flexible schema for other columns
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -69,7 +69,7 @@ class Contact(BaseModel):
 
 class ContactCreate(BaseModel):
     phone: str
-    status: Optional[str] = "Follow-up"
+    status: Optional[str] = "None"
     data: Dict[str, Any] = {}
 
 class ContactUpdate(BaseModel):
@@ -328,7 +328,7 @@ async def import_contacts(
                 continue
             
             # Handle status
-            status = contact_data.pop("status", "Follow-up")
+            status = contact_data.pop("status", "None")
             
             contact = Contact(
                 phone=phone,

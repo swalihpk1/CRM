@@ -5,6 +5,33 @@ import '@/App.css';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
+// Helper function to format dates in 12-hour format
+const format12Hour = (dateString) => {
+  const date = new Date(dateString);
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+};
+
+// Helper functions for contact and follow-up display
+const getContactName = (followup) => {
+  if (followup.contact) {
+    const name = followup.contact.data?.name || followup.contact.data?.Name || followup.contact.phone;
+    const shopName = followup.contact.data?.shop_name || followup.contact.data?.Shop_Name || followup.contact.data?.['Shop Name'];
+    return shopName ? `${shopName} (${name})` : name;
+  }
+  return followup.contact_id;
+};
+
+const getContactPhone = (followup) => {
+  return followup.contact?.phone || 'N/A';
+};
+
 // Auth Context
 const AuthContext = createContext();
 
@@ -175,6 +202,9 @@ const Dashboard = () => {
   const [hasMoreFollowups, setHasMoreFollowups] = useState(true);
   const [loadingFollowups, setLoadingFollowups] = useState(false);
   const [allFollowups, setAllFollowups] = useState([]);
+  const [activityLogsPage, setActivityLogsPage] = useState(0);
+  const [hasMoreActivityLogs, setHasMoreActivityLogs] = useState(true);
+  const [loadingActivityLogs, setLoadingActivityLogs] = useState(false);
 
   const fetchStats = async () => {
     try {
@@ -223,12 +253,32 @@ const Dashboard = () => {
     }
   }, []);
 
-  const fetchActivityLogs = useCallback(async () => {
+  const fetchActivityLogs = useCallback(async (page = 0, reset = false) => {
+    setLoadingActivityLogs(prev => {
+      if (prev) return prev; // If already loading, don't start another request
+      return true;
+    });
+    
     try {
-      const response = await axios.get(`${API}/activity-logs?limit=50`);
-      setActivityLogs(response.data);
+      const params = new URLSearchParams();
+      params.append('skip', page * 20);
+      params.append('limit', '20');
+      
+      const response = await axios.get(`${API}/activity-logs?${params}`);
+      const newLogs = response.data;
+      
+      if (reset || page === 0) {
+        setActivityLogs(newLogs);
+      } else {
+        setActivityLogs(prev => [...prev, ...newLogs]);
+      }
+      
+      setHasMoreActivityLogs(newLogs.length === 20);
+      setActivityLogsPage(page);
     } catch (error) {
       console.error('Failed to fetch activity logs:', error);
+    } finally {
+      setLoadingActivityLogs(false);
     }
   }, []);
 
@@ -237,7 +287,7 @@ const Dashboard = () => {
     fetchContacts(0, true);
     fetchFollowups();
     fetchPaginatedFollowups(0, 'all', true);
-    fetchActivityLogs();
+    fetchActivityLogs(0, true);
     
     // Request notification permission
     if ('Notification' in window && Notification.permission === 'default') {
@@ -247,29 +297,35 @@ const Dashboard = () => {
     // Check for follow-ups every minute
     const interval = setInterval(checkFollowupAlerts, 60000);
     return () => clearInterval(interval);
-  }, [fetchFollowups, fetchActivityLogs]);
-  
-  // Make fetchFollowups and fetchActivityLogs available globally for live updates
-  useEffect(() => {
-    window.refreshFollowups = fetchFollowups;
-    window.refreshActivityLogs = fetchActivityLogs;
-    return () => {
-      delete window.refreshFollowups;
-      delete window.refreshActivityLogs;
-    };
-  }, [fetchFollowups, fetchActivityLogs]);
-
-  const loadMoreContacts = useCallback(async () => {
-    if (hasMoreContacts && !loadingContacts) {
-      await fetchContacts(contactsPage + 1, false);
-    }
-  }, [hasMoreContacts, loadingContacts, contactsPage]);
+  }, []); // Empty dependency array - only run once on mount
 
   const resetContacts = async () => {
     setContactsPage(0);
     setHasMoreContacts(true);
     await fetchContacts(0, true);
   };
+
+  const resetActivityLogs = async () => {
+    setActivityLogsPage(0);
+    setHasMoreActivityLogs(true);
+    await fetchActivityLogs(0, true);
+  };
+  
+  // Make fetchFollowups and resetActivityLogs available globally for live updates
+  useEffect(() => {
+    window.refreshFollowups = () => fetchFollowups();
+    window.refreshActivityLogs = () => resetActivityLogs();
+    return () => {
+      delete window.refreshFollowups;
+      delete window.refreshActivityLogs;
+    };
+  }, []); // Empty dependency - use arrow functions to always call current function references
+
+  const loadMoreContacts = useCallback(async () => {
+    if (hasMoreContacts && !loadingContacts) {
+      await fetchContacts(contactsPage + 1, false);
+    }
+  }, [hasMoreContacts, loadingContacts, contactsPage]);
 
   const fetchPaginatedFollowups = async (page = 0, dateFilter = 'all', reset = false) => {
     if (loadingFollowups) return;
@@ -311,6 +367,12 @@ const Dashboard = () => {
     await fetchPaginatedFollowups(0, dateFilter, true);
   };
 
+  const loadMoreActivityLogs = useCallback(async () => {
+    if (hasMoreActivityLogs && !loadingActivityLogs) {
+      await fetchActivityLogs(activityLogsPage + 1, false);
+    }
+  }, [hasMoreActivityLogs, loadingActivityLogs, activityLogsPage]);
+
   const checkFollowupAlerts = async () => {
     try {
       const response = await axios.get(`${API}/followups/upcoming`);
@@ -333,7 +395,7 @@ const Dashboard = () => {
     try {
       await axios.post(`${API}/contacts/${contactId}/call`);
       alert('Call logged successfully!');
-      fetchActivityLogs();
+      resetActivityLogs();
       // Also refresh global activity logs if available
       if (window.refreshActivityLogs) {
         window.refreshActivityLogs();
@@ -350,7 +412,7 @@ const Dashboard = () => {
       await axios.delete(`${API}/contacts/${contactId}`);
       resetContacts();
       fetchStats();
-      fetchActivityLogs();
+      resetActivityLogs();
       setSelectedContact(null);
     } catch (error) {
       alert('Failed to delete contact');
@@ -371,7 +433,7 @@ const Dashboard = () => {
       // Refresh data after successful deletion
       resetContacts();
       fetchStats();
-      fetchActivityLogs();
+      resetActivityLogs();
       
       return true; // Success
     } catch (error) {
@@ -400,7 +462,7 @@ const Dashboard = () => {
       
       // Update stats and activity logs to reflect the change
       fetchStats();
-      fetchActivityLogs();
+      resetActivityLogs();
     } catch (error) {
       alert('Failed to update status');
       // Revert optimistic update on error
@@ -485,6 +547,30 @@ const Dashboard = () => {
               onLoadMore={loadMoreContacts}
               hasMore={hasMoreContacts}
               loading={loadingContacts}
+              onUpdate={async (updatedContact) => {
+                try {
+                  // Optimistically update the contact in the list immediately
+                  setContacts(prevContacts => 
+                    prevContacts.map(contact => 
+                      contact.id === updatedContact.id ? updatedContact : contact
+                    )
+                  );
+                  
+                  // Make API call to update the contact
+                  await axios.put(`${API}/contacts/${updatedContact.id}`, {
+                    phone: updatedContact.phone,
+                    data: updatedContact.data
+                  });
+                  
+                  // Update stats and activity logs to reflect the change
+                  fetchStats();
+                  resetActivityLogs();
+                } catch (error) {
+                  alert('Failed to update contact');
+                  // Revert optimistic update on error
+                  resetContacts();
+                }
+              }}
             />
           )}
           {view === 'followups' && (
@@ -499,9 +585,17 @@ const Dashboard = () => {
             />
           )}
           {view === 'import' && (
-            <ImportView onImportComplete={() => { resetContacts(); fetchStats(); fetchActivityLogs(); }} />
+            <ImportView onImportComplete={() => { resetContacts(); fetchStats(); resetActivityLogs(); }} />
           )}
-          {view === 'activity' && <ActivityLogView logs={activityLogs} />}
+          {view === 'activity' && (
+            <ActivityLogView 
+              logs={activityLogs} 
+              onLoadMore={loadMoreActivityLogs}
+              hasMore={hasMoreActivityLogs}
+              loading={loadingActivityLogs}
+              contacts={contacts}
+            />
+          )}
         </div>
       </div>
 
@@ -524,7 +618,7 @@ const Dashboard = () => {
             // Make API call
             axios.put(`${API}/contacts/${selectedContact.id}`, updates).then(() => {
               fetchStats();
-              fetchActivityLogs();
+              resetActivityLogs();
             }).catch(() => {
               // Revert on error
               resetContacts();
@@ -547,7 +641,7 @@ const Dashboard = () => {
               await axios.post(`${API}/contacts`, data);
               resetContacts();
               fetchStats();
-              fetchActivityLogs();
+              resetActivityLogs();
               setShowContactModal(false);
             } catch (error) {
               if (error.response?.status === 400 && error.response?.data?.detail?.includes('already exists')) {
@@ -611,8 +705,9 @@ const DashboardView = ({ stats, followups }) => {
             <div className="space-y-3">
               {followups.overdue.slice(0, 5).map(followup => (
                 <div key={followup.id} className="p-3 bg-red-50 rounded-lg border border-red-200">
-                  <p className="font-medium text-gray-800">Contact: {followup.contact_id}</p>
-                  <p className="text-sm text-gray-600">Due: {new Date(followup.follow_up_date).toLocaleString()}</p>
+                  <p className="font-medium text-gray-800">{getContactName(followup)}</p>
+                  <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
+                  <p className="text-sm text-gray-600">Due: {format12Hour(followup.follow_up_date)}</p>
                   {followup.notes && <p className="text-sm text-gray-500 mt-1">{followup.notes}</p>}
                 </div>
               ))}
@@ -629,8 +724,9 @@ const DashboardView = ({ stats, followups }) => {
             <div className="space-y-3">
               {followups.upcoming.slice(0, 5).map(followup => (
                 <div key={followup.id} className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <p className="font-medium text-gray-800">Contact: {followup.contact_id}</p>
-                  <p className="text-sm text-gray-600">Due: {new Date(followup.follow_up_date).toLocaleString()}</p>
+                  <p className="font-medium text-gray-800">{getContactName(followup)}</p>
+                  <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
+                  <p className="text-sm text-gray-600">Due: {format12Hour(followup.follow_up_date)}</p>
                   {followup.notes && <p className="text-sm text-gray-500 mt-1">{followup.notes}</p>}
                 </div>
               ))}
@@ -657,7 +753,8 @@ const ContactsView = ({
   onBulkDeleteContacts,
   onLoadMore,
   hasMore,
-  loading
+  loading,
+  onUpdate
 }) => {
   const statuses = ['None', 'Called', 'Not Attending', 'Follow-up', 'Interested', 'Not Interested', 'Irrelevant', 'Logged In'];
   const [selectedContacts, setSelectedContacts] = useState(new Set());
@@ -884,7 +981,28 @@ const ContactsView = ({
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-gray-700 min-w-[150px]">
-                  {contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '-'}
+                  <div className="flex items-center justify-between">
+                    <span>{contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '-'}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const newShopName = prompt('Enter new shop name:', contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '');
+                        if (newShopName !== null && newShopName !== (contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '')) {
+                          onUpdate({
+                            ...contact,
+                            data: {
+                              ...contact.data,
+                              shop_name: newShopName
+                            }
+                          });
+                        }
+                      }}
+                      className="text-indigo-600 hover:text-indigo-800 text-sm ml-2"
+                      title="Edit Shop Name"
+                    >
+                      ✏️
+                    </button>
+                  </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-gray-700 min-w-[200px]">
                   {contact.data.address || contact.data.Address || contact.data['Address'] || '-'}
@@ -1062,17 +1180,6 @@ const FollowUpsView = ({
     ? [...followups.overdue, ...followups.upcoming] 
     : allFollowups;
 
-  const getContactName = (followup) => {
-    if (followup.contact) {
-      return followup.contact.data?.name || followup.contact.data?.Name || followup.contact.phone;
-    }
-    return followup.contact_id;
-  };
-
-  const getContactPhone = (followup) => {
-    return followup.contact?.phone || 'N/A';
-  };
-
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -1124,7 +1231,7 @@ const FollowUpsView = ({
                           <div className="flex-1">
                             <p className="font-bold text-lg text-gray-800">{getContactName(followup)}</p>
                             <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
-                            <p className="text-sm text-red-600 font-medium mt-1">⏰ Due: {new Date(followup.follow_up_date).toLocaleString()}</p>
+                            <p className="text-sm text-red-600 font-medium mt-1">⏰ Due: {format12Hour(followup.follow_up_date)}</p>
                             {followup.notes && <p className="text-sm text-gray-700 mt-2 italic">"{followup.notes}"</p>}
                           </div>
                           <button
@@ -1153,7 +1260,7 @@ const FollowUpsView = ({
                           <div className="flex-1">
                             <p className="font-bold text-lg text-gray-800">{getContactName(followup)}</p>
                             <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
-                            <p className="text-sm text-indigo-600 font-medium mt-1">⏰ Scheduled: {new Date(followup.follow_up_date).toLocaleString()}</p>
+                            <p className="text-sm text-indigo-600 font-medium mt-1">⏰ Scheduled: {format12Hour(followup.follow_up_date)}</p>
                             {followup.notes && <p className="text-sm text-gray-700 mt-2 italic">"{followup.notes}"</p>}
                           </div>
                           <button
@@ -1192,7 +1299,7 @@ const FollowUpsView = ({
                             <p className="font-bold text-lg text-gray-800">{getContactName(followup)}</p>
                             <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
                             <p className={`text-sm font-medium mt-1 ${isOverdue ? 'text-red-600' : 'text-indigo-600'}`}>
-                              ⏰ {isOverdue ? 'Overdue:' : 'Scheduled:'} {new Date(followup.follow_up_date).toLocaleString()}
+                              ⏰ {isOverdue ? 'Overdue:' : 'Scheduled:'} {format12Hour(followup.follow_up_date)}
                             </p>
                             {followup.notes && <p className="text-sm text-gray-700 mt-2 italic">"{followup.notes}"</p>}
                           </div>
@@ -1433,7 +1540,37 @@ const ImportView = ({ onImportComplete }) => {
 };
 
 // Activity Log View
-const ActivityLogView = ({ logs }) => {
+const ActivityLogView = ({ logs, onLoadMore, hasMore, loading, contacts = [] }) => {
+  // Add infinite scroll functionality
+  useEffect(() => {
+    let timeoutId = null;
+    
+    const handleScroll = () => {
+      if (loading || !hasMore) return;
+      
+      const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
+      const bottomDistance = scrollHeight - (scrollTop + clientHeight);
+      
+      if (bottomDistance <= 300) { // Trigger when 300px from bottom
+        onLoadMore();
+      }
+    };
+
+    const throttledHandleScroll = () => {
+      if (timeoutId) return;
+      timeoutId = setTimeout(() => {
+        handleScroll();
+        timeoutId = null;
+      }, 200);
+    };
+
+    window.addEventListener('scroll', throttledHandleScroll);
+    return () => {
+      window.removeEventListener('scroll', throttledHandleScroll);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [hasMore, loading, onLoadMore]);
+
   // Format date in Indian format (DD/MM/YYYY, HH:MM:SS AM/PM)
   const formatIndianDate = (timestamp) => {
     const date = new Date(timestamp);
@@ -1475,6 +1612,35 @@ const ActivityLogView = ({ logs }) => {
     }
   };
 
+  // Helper function to get contact from log (reused by both shop name and phone functions)
+  const getContactFromLog = (log) => {
+    if (!log.target || !contacts.length) return null;
+    
+    // If target is a phone number, find contact directly
+    if (log.target.startsWith('+91') || /^\+?\d+/.test(log.target)) {
+      return contacts.find(c => c.phone === log.target);
+    }
+    
+    // If target looks like a contact ID (UUID), find contact by various ID fields
+    if (log.target.length === 36 && log.target.includes('-')) {
+      return contacts.find(c => c.id === log.target) || 
+             contacts.find(c => c.contact_id === log.target) ||
+             contacts.find(c => c._id === log.target);
+    }
+    
+    return null;
+  };
+
+  // Helper function to get shop name from log
+  const getShopNameFromLog = (log) => {
+    const contact = getContactFromLog(log);
+    if (contact && contact.data) {
+      const shopName = contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'];
+      return shopName || 'No Shop Name';
+    }
+    return 'N/A';
+  };
+
   // Format target with better context
   const formatTarget = (log) => {
     if (log.target) {
@@ -1482,12 +1648,17 @@ const ActivityLogView = ({ logs }) => {
       if (log.target.startsWith('+91') || /^\+?\d+/.test(log.target)) {
         return `📱 ${log.target}`;
       }
-      // For follow-up completed actions, show "Follow-up Task" instead of UUID
-      if (log.action === 'Completed follow-up' && log.target.length === 36 && log.target.includes('-')) {
-        return '✅ Follow-up Task';
-      }
-      // If target is a UUID (for other follow-up actions), try to show contact info
+      // If target looks like a contact ID (UUID), find and show phone number
       if (log.target.length === 36 && log.target.includes('-')) {
+        const contact = getContactFromLog(log);
+        if (contact && contact.phone) {
+          return `📱 ${contact.phone}`;
+        }
+        
+        // For follow-up completed actions, show appropriate message
+        if (log.action === 'Completed follow-up') {
+          return '✅ Follow-up Task';
+        }
         return `📋 Follow-up`;
       }
       return log.target;
@@ -1541,6 +1712,35 @@ const ActivityLogView = ({ logs }) => {
     }
   };
 
+  useEffect(() => {
+    let timeoutId = null;
+    
+    const handleScroll = () => {
+      if (loading || !hasMore) return;
+      
+      const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
+      const bottomDistance = scrollHeight - (scrollTop + clientHeight);
+      
+      if (bottomDistance <= 300) { // Trigger when 300px from bottom
+        onLoadMore();
+      }
+    };
+
+    const throttledHandleScroll = () => {
+      if (timeoutId) return;
+      timeoutId = setTimeout(() => {
+        handleScroll();
+        timeoutId = null;
+      }, 200);
+    };
+
+    window.addEventListener('scroll', throttledHandleScroll);
+    return () => {
+      window.removeEventListener('scroll', throttledHandleScroll);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [hasMore, loading, onLoadMore]);
+
   return (
     <div>
       <h2 className="text-3xl font-bold text-gray-800 mb-6">Activity Log</h2>
@@ -1559,6 +1759,7 @@ const ActivityLogView = ({ logs }) => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date & Time</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Shop Name</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact/Target</th>
                 </tr>
               </thead>
@@ -1578,12 +1779,47 @@ const ActivityLogView = ({ logs }) => {
                       {formatAction(log)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {getShopNameFromLog(log)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {formatTarget(log)}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+        
+        {/* Load More Button - Fallback */}
+        {hasMore && !loading && logs.length > 0 && (
+          <div className="text-center py-4">
+            <button
+              onClick={onLoadMore}
+              className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
+            >
+              Load More Activity Logs
+            </button>
+          </div>
+        )}
+        
+        {/* Loading indicator */}
+        {loading && (
+          <div className="text-center py-4">
+            <div className="inline-flex items-center px-4 py-2 font-semibold leading-6 text-sm shadow rounded-md text-white bg-indigo-500">
+              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Loading more activity logs...
+            </div>
+          </div>
+        )}
+        
+        {/* End of list indicator */}
+        {!hasMore && logs.length > 0 && (
+          <div className="text-center py-4 text-gray-500">
+            No more activity logs to load
           </div>
         )}
       </div>
@@ -1876,7 +2112,7 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
               </div>
               <div>
                 <label className="text-sm text-gray-600">Last Call</label>
-                <p className="font-medium">{contact.last_call_at ? new Date(contact.last_call_at).toLocaleString() : 'Never'}</p>
+                <p className="font-medium">{contact.last_call_at ? format12Hour(contact.last_call_at) : 'Never'}</p>
               </div>
             </div>
             <div className="mt-4 flex gap-2">
@@ -1903,7 +2139,7 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
               {notes.map(note => (
                 <div key={note.id} className="bg-blue-50 p-3 rounded-lg">
                   <p className="text-sm text-gray-700">{note.content}</p>
-                  <p className="text-xs text-gray-500 mt-1">{new Date(note.created_at).toLocaleString()}</p>
+                  <p className="text-xs text-gray-500 mt-1">{format12Hour(note.created_at)}</p>
                 </div>
               ))}
             </div>

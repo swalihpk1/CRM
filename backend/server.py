@@ -248,65 +248,100 @@ async def import_contacts(
 ):
     """Import contacts from Excel file with dynamic column mapping"""
     try:
-        # Parse column mapping (format: {excel_column: crm_field})
+        # Parse column mapping (format: {crm_field: excel_column})
         import json
         mapping = json.loads(column_mapping)
         
         # Find which Excel column contains phone numbers
-        phone_column = None
-        for excel_col, crm_field in mapping.items():
-            if crm_field == 'phone':
-                phone_column = excel_col
-                break
-        
-        if not phone_column:
-            raise HTTPException(status_code=400, detail="Phone column mapping is required")
+        phone_column = mapping.get('phone')
         
         # Read Excel file
         contents = await file.read()
-        df = pd.read_excel(io.BytesIO(contents))
+        try:
+            df = pd.read_excel(io.BytesIO(contents), engine='openpyxl', dtype=str, na_filter=False)
+        except:
+            try:
+                df = pd.read_excel(io.BytesIO(contents), engine='xlrd', dtype=str, na_filter=False)
+            except:
+                df = pd.read_excel(io.BytesIO(contents), dtype=str, na_filter=False)
         
-        # Remove duplicates based on phone column
-        df = df.drop_duplicates(subset=[phone_column], keep='first')
+        # Clean up column names
+        df.columns = df.columns.str.strip()
+        
+        # Debug
+        print(f"\n=== IMPORT DEBUG ===")
+        print(f"Excel columns: {list(df.columns)}")
+        print(f"Mapping: {mapping}")
+        print(f"Phone column: {phone_column}")
+        
+        # Replace empty values
+        df = df.replace(["", " ", "N/A", "n/a", "NA", "na", "NULL", "null", "None", "none"], pd.NA)
+        
+        # Remove duplicates
+        if phone_column and phone_column in df.columns:
+            df = df.drop_duplicates(subset=[phone_column], keep="first")
         
         imported_count = 0
         skipped_count = 0
         
-        for _, row in df.iterrows():
-            phone = str(row[phone_column]) if pd.notna(row[phone_column]) else None
+        for index, row in df.iterrows():
+            contact_data = {}
             
+            for crm_field, excel_col in mapping.items():
+                if excel_col in df.columns:
+                    value = row[excel_col]
+                    if pd.isna(value) or value is None:
+                        continue
+                    str_value = str(value).strip()
+                    if str_value == "" or str_value.lower() in ["nan", "none", "null", "na", "n/a"]:
+                        continue
+                    try:
+                        contact_data[crm_field] = str_value.encode("utf-8", errors="ignore").decode("utf-8")
+                    except:
+                        contact_data[crm_field] = str_value
+            
+            # Get phone number
+            phone = None
+            if phone_column and phone_column in df.columns:
+                phone_value = row[phone_column]
+                if pd.notna(phone_value):
+                    phone = str(phone_value).strip()
+                contact_data.pop("phone", None)
+            
+            # Generate phone if not available
             if not phone:
-                skipped_count += 1
-                continue
+                shop_name = contact_data.get("shop_name")
+                if shop_name and shop_name.strip():
+                    clean_shop = shop_name.replace(" ", "_").replace("-", "_")[:15]
+                    phone = f"{clean_shop}_{imported_count + 1}"
+                else:
+                    phone = f"contact_{imported_count + 1}"
             
-            # Check if contact already exists
+            # Check for duplicates
             existing = await db.contacts.find_one({"phone": phone})
             if existing:
                 skipped_count += 1
                 continue
             
-            # Create contact with flexible data structure
-            contact_data = {}
-            for excel_col, crm_field in mapping.items():
-                if excel_col in df.columns and pd.notna(row[excel_col]):
-                    # Convert to string and handle special values
-                    value = row[excel_col]
-                    if pd.isna(value) or value == '' or str(value).lower() in ['nan', 'none', 'null']:
-                        continue
-                    contact_data[crm_field] = str(value).strip()
+            if not contact_data:
+                skipped_count += 1
+                continue
+            
+            # Handle status
+            status = contact_data.pop("status", "Follow-up")
             
             contact = Contact(
                 phone=phone,
+                status=status,
                 data=contact_data
             )
             
             await db.contacts.insert_one(contact.model_dump())
             imported_count += 1
         
-        # Log activity
         await log_activity(
-            current_user['id'],
-            current_user['email'],
+            current_user["id"],
+            current_user["email"],
             "Imported contacts",
             details=f"Imported {imported_count} contacts, skipped {skipped_count}"
         )
@@ -318,6 +353,7 @@ async def import_contacts(
         }
     
     except Exception as e:
+        print(f"Import error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @api_router.post("/contacts/preview")
@@ -328,15 +364,50 @@ async def preview_excel(
     """Preview Excel file columns for mapping"""
     try:
         contents = await file.read()
-        df = pd.read_excel(io.BytesIO(contents), nrows=5)
+        # Read with proper encoding and data handling
+        try:
+            df = pd.read_excel(io.BytesIO(contents), nrows=5, engine='openpyxl', dtype=str, na_filter=False)
+        except:
+            try:
+                df = pd.read_excel(io.BytesIO(contents), nrows=5, engine='xlrd', dtype=str, na_filter=False)
+            except:
+                df = pd.read_excel(io.BytesIO(contents), nrows=5, dtype=str, na_filter=False)
+        
+        # Clean up column names
+        df.columns = df.columns.str.strip()
+        
+        # Clean up data for preview
+        df = df.replace(['', ' ', 'N/A', 'n/a', 'NA', 'na', 'NULL', 'null', 'None', 'none'], None)
         
         # Replace NaN values with None for JSON serialization
         df = df.replace({pd.NA: None, pd.NaT: None})
         df = df.where(pd.notna(df), None)
         
+        # Create better mapping suggestions based on common column names
+        suggested_mapping = {}
+        for col in df.columns:
+            col_lower = col.lower().strip()
+            if col_lower in ['shop name', 'shopname', 'shop_name', 'business name']:
+                suggested_mapping[col] = 'shop_name'
+            elif col_lower in ['street', 'address', 'location', 'addr']:
+                suggested_mapping[col] = 'address'
+            elif col_lower in ['phone number', 'phone_number', 'phone', 'mobile', 'contact', 'contact number']:
+                suggested_mapping[col] = 'phone'
+            elif col_lower == 'city':
+                suggested_mapping[col] = 'city'
+            elif col_lower == 'state':
+                suggested_mapping[col] = 'state'
+            elif col_lower == 'status':
+                suggested_mapping[col] = 'status'
+            elif col_lower in ['category', 'type', 'classification']:
+                suggested_mapping[col] = 'category'
+            else:
+                suggested_mapping[col] = ''
+        
         return {
             "columns": df.columns.tolist(),
-            "sample_data": df.to_dict('records')
+            "sample_data": df.to_dict('records'),
+            "suggested_mapping": suggested_mapping
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -649,6 +720,58 @@ async def complete_followup(
     )
     
     return {"message": "Follow-up marked as completed"}
+
+@api_router.get("/followups/paginated")
+async def get_paginated_followups(
+    skip: int = 0,
+    limit: int = 20,
+    date_filter: str = "all",
+    current_user: dict = Depends(get_current_user)
+):
+    """Get paginated follow-ups"""
+    now = datetime.now(timezone.utc)
+    
+    # Calculate date range based on filter
+    query = {"status": {"$in": ["pending", "overdue"]}}
+    if date_filter == "today":
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        query["follow_up_date"] = {
+            "$gte": start_date.isoformat(),
+            "$lte": end_date.isoformat()
+        }
+    elif date_filter == "tomorrow":
+        tomorrow = now + timedelta(days=1)
+        start_date = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = tomorrow.replace(hour=23, minute=59, second=59, microsecond=999999)
+        query["follow_up_date"] = {
+            "$gte": start_date.isoformat(),
+            "$lte": end_date.isoformat()
+        }
+    elif date_filter == "this_week":
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = (now + timedelta(days=7)).replace(hour=23, minute=59, second=59, microsecond=999999)
+        query["follow_up_date"] = {
+            "$gte": start_date.isoformat(),
+            "$lte": end_date.isoformat()
+        }
+    
+    followups = await db.followups.find(query, {"_id": 0}).sort("follow_up_date", 1).skip(skip).limit(limit).to_list(limit)
+    
+    # Add contact details to each follow-up
+    result = []
+    for followup in followups:
+        # Update status if overdue
+        if followup['follow_up_date'] < now.isoformat() and followup['status'] != 'overdue':
+            followup['status'] = 'overdue'
+            await db.followups.update_one({"id": followup['id']}, {"$set": {"status": "overdue"}})
+        
+        contact = await db.contacts.find_one({"id": followup['contact_id']}, {"_id": 0})
+        if contact:
+            followup['contact'] = contact
+            result.append(followup)
+    
+    return result
 
 # ============ ACTIVITY LOG ROUTES ============
 

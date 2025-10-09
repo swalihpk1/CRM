@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useContext } from 'react';
+import React, { useState, useEffect, createContext, useContext, useCallback } from 'react';
 import axios from 'axios';
 import '@/App.css';
 
@@ -168,11 +168,19 @@ const Dashboard = () => {
   const [showFollowUpModal, setShowFollowUpModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [contactsPage, setContactsPage] = useState(0);
+  const [hasMoreContacts, setHasMoreContacts] = useState(true);
+  const [loadingContacts, setLoadingContacts] = useState(false);
+  const [followupsPage, setFollowupsPage] = useState(0);
+  const [hasMoreFollowups, setHasMoreFollowups] = useState(true);
+  const [loadingFollowups, setLoadingFollowups] = useState(false);
+  const [allFollowups, setAllFollowups] = useState([]);
 
   useEffect(() => {
     fetchStats();
-    fetchContacts();
+    fetchContacts(0, true);
     fetchFollowups();
+    fetchPaginatedFollowups(0, 'all', true);
     fetchActivityLogs();
     
     // Request notification permission
@@ -194,16 +202,32 @@ const Dashboard = () => {
     }
   };
 
-  const fetchContacts = async () => {
+  const fetchContacts = async (page = 0, reset = false) => {
+    if (loadingContacts) return;
+    
     try {
+      setLoadingContacts(true);
       const params = new URLSearchParams();
+      params.append('skip', page * 20);
+      params.append('limit', '20');
       if (searchQuery) params.append('search', searchQuery);
       if (statusFilter) params.append('status', statusFilter);
       
       const response = await axios.get(`${API}/contacts?${params}`);
-      setContacts(response.data);
+      const newContacts = response.data;
+      
+      if (reset || page === 0) {
+        setContacts(newContacts);
+      } else {
+        setContacts(prev => [...prev, ...newContacts]);
+      }
+      
+      setHasMoreContacts(newContacts.length === 20);
+      setContactsPage(page);
     } catch (error) {
       console.error('Failed to fetch contacts:', error);
+    } finally {
+      setLoadingContacts(false);
     }
   };
 
@@ -223,6 +247,58 @@ const Dashboard = () => {
     } catch (error) {
       console.error('Failed to fetch activity logs:', error);
     }
+  };
+
+  const loadMoreContacts = useCallback(async () => {
+    if (hasMoreContacts && !loadingContacts) {
+      await fetchContacts(contactsPage + 1, false);
+    }
+  }, [hasMoreContacts, loadingContacts, contactsPage]);
+
+  const resetContacts = async () => {
+    setContactsPage(0);
+    setHasMoreContacts(true);
+    await fetchContacts(0, true);
+  };
+
+  const fetchPaginatedFollowups = async (page = 0, dateFilter = 'all', reset = false) => {
+    if (loadingFollowups) return;
+    
+    try {
+      setLoadingFollowups(true);
+      const params = new URLSearchParams();
+      params.append('skip', page * 20);
+      params.append('limit', '20');
+      params.append('date_filter', dateFilter);
+      
+      const response = await axios.get(`${API}/followups/paginated?${params}`);
+      const newFollowups = response.data;
+      
+      if (reset || page === 0) {
+        setAllFollowups(newFollowups);
+      } else {
+        setAllFollowups(prev => [...prev, ...newFollowups]);
+      }
+      
+      setHasMoreFollowups(newFollowups.length === 20);
+      setFollowupsPage(page);
+    } catch (error) {
+      console.error('Failed to fetch follow-ups:', error);
+    } finally {
+      setLoadingFollowups(false);
+    }
+  };
+
+  const loadMoreFollowups = async (dateFilter = 'all') => {
+    if (hasMoreFollowups && !loadingFollowups) {
+      await fetchPaginatedFollowups(followupsPage + 1, dateFilter, false);
+    }
+  };
+
+  const resetFollowups = async (dateFilter = 'all') => {
+    setFollowupsPage(0);
+    setHasMoreFollowups(true);
+    await fetchPaginatedFollowups(0, dateFilter, true);
   };
 
   const checkFollowupAlerts = async () => {
@@ -258,7 +334,7 @@ const Dashboard = () => {
     
     try {
       await axios.delete(`${API}/contacts/${contactId}`);
-      fetchContacts();
+      resetContacts();
       fetchStats();
       setSelectedContact(null);
     } catch (error) {
@@ -269,7 +345,7 @@ const Dashboard = () => {
   const handleUpdateStatus = async (contactId, status) => {
     try {
       await axios.put(`${API}/contacts/${contactId}`, { status });
-      fetchContacts();
+      resetContacts();
       fetchStats();
       if (selectedContact && selectedContact.id === contactId) {
         setSelectedContact({ ...selectedContact, status });
@@ -281,7 +357,7 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (view === 'contacts') {
-      fetchContacts();
+      resetContacts();
     }
   }, [searchQuery, statusFilter]);
 
@@ -352,16 +428,24 @@ const Dashboard = () => {
               onLogCall={handleLogCall}
               onUpdateStatus={handleUpdateStatus}
               onDeleteContact={handleDeleteContact}
+              onLoadMore={loadMoreContacts}
+              hasMore={hasMoreContacts}
+              loading={loadingContacts}
             />
           )}
           {view === 'followups' && (
             <FollowUpsView
               followups={followups}
               onRefresh={fetchFollowups}
+              allFollowups={allFollowups}
+              onLoadMore={loadMoreFollowups}
+              hasMore={hasMoreFollowups}
+              loading={loadingFollowups}
+              onResetFollowups={resetFollowups}
             />
           )}
           {view === 'import' && (
-            <ImportView onImportComplete={() => { fetchContacts(); fetchStats(); }} />
+            <ImportView onImportComplete={() => { resetContacts(); fetchStats(); }} />
           )}
           {view === 'activity' && <ActivityLogView logs={activityLogs} />}
         </div>
@@ -374,7 +458,7 @@ const Dashboard = () => {
           onClose={() => setSelectedContact(null)}
           onUpdate={(updates) => {
             axios.put(`${API}/contacts/${selectedContact.id}`, updates).then(() => {
-              fetchContacts();
+              resetContacts();
               setSelectedContact(null);
             });
           }}
@@ -390,7 +474,7 @@ const Dashboard = () => {
           onClose={() => setShowContactModal(false)}
           onSave={async (data) => {
             await axios.post(`${API}/contacts`, data);
-            fetchContacts();
+            resetContacts();
             fetchStats();
             setShowContactModal(false);
           }}
@@ -402,7 +486,7 @@ const Dashboard = () => {
 
 // Dashboard View
 const DashboardView = ({ stats, followups }) => {
-  const statuses = ['Connected', 'Not Attending', 'Follow-up', 'Interested', 'Not Interested'];
+  const statuses = ['Called', 'Not Attending', 'Follow-up', 'Interested', 'Not Interested', 'Irrelevant'];
   
   return (
     <div>
@@ -474,9 +558,41 @@ const ContactsView = ({
   onSelectContact,
   onLogCall,
   onUpdateStatus,
-  onDeleteContact
+  onDeleteContact,
+  onLoadMore,
+  hasMore,
+  loading
 }) => {
-  const statuses = ['Connected', 'Not Attending', 'Follow-up', 'Interested', 'Not Interested'];
+  const statuses = ['Called', 'Not Attending', 'Follow-up', 'Interested', 'Not Interested', 'Irrelevant'];
+
+  useEffect(() => {
+    let timeoutId = null;
+    
+    const handleScroll = () => {
+      if (loading || !hasMore) return;
+      
+      const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
+      const bottomDistance = scrollHeight - (scrollTop + clientHeight);
+      
+      if (bottomDistance <= 300) { // Trigger when 300px from bottom
+        onLoadMore();
+      }
+    };
+
+    const throttledHandleScroll = () => {
+      if (timeoutId) return;
+      timeoutId = setTimeout(() => {
+        handleScroll();
+        timeoutId = null;
+      }, 200);
+    };
+
+    window.addEventListener('scroll', throttledHandleScroll);
+    return () => {
+      window.removeEventListener('scroll', throttledHandleScroll);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [hasMore, loading, onLoadMore]);
   
   return (
     <div>
@@ -513,20 +629,24 @@ const ContactsView = ({
 
       {/* Contacts Table */}
       <div className="bg-white rounded-xl shadow-md overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Call</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-          </thead>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-max">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[120px]">Phone</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[150px]">Shop Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[200px]">Address</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[100px]">City</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[80px]">State</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[120px]">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[150px]">Category</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[100px]">Actions</th>
+              </tr>
+            </thead>
           <tbody className="divide-y divide-gray-200">
             {contacts.map(contact => (
               <tr key={contact.id} className="hover:bg-gray-50 cursor-pointer">
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="px-6 py-4 whitespace-nowrap min-w-[120px]">
                   <div className="flex items-center gap-2">
                     <span className="text-gray-900">{contact.phone}</span>
                     <a
@@ -542,10 +662,19 @@ const ContactsView = ({
                     </a>
                   </div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-gray-700">
-                  {contact.data.name || contact.data.Name || 'N/A'}
+                <td className="px-6 py-4 whitespace-nowrap text-gray-700 min-w-[150px]">
+                  {contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '-'}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="px-6 py-4 whitespace-nowrap text-gray-700 min-w-[200px]">
+                  {contact.data.address || contact.data.Address || contact.data['Address'] || '-'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-gray-700 min-w-[100px]">
+                  {contact.data.city || contact.data.City || contact.data['City'] || '-'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-gray-700 min-w-[80px]">
+                  {contact.data.state || contact.data.State || contact.data['State'] || '-'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap min-w-[120px]">
                   <select
                     value={contact.status}
                     onChange={(e) => {
@@ -560,10 +689,10 @@ const ContactsView = ({
                     ))}
                   </select>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                  {contact.last_call_at ? new Date(contact.last_call_at).toLocaleString() : 'Never'}
+                <td className="px-6 py-4 whitespace-nowrap text-gray-700 min-w-[150px]">
+                  {contact.data.category || contact.data.Category || contact.data['Category'] || '-'}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                <td className="px-6 py-4 whitespace-nowrap text-sm min-w-[100px]">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -586,22 +715,79 @@ const ContactsView = ({
               </tr>
             ))}
           </tbody>
-        </table>
-        {contacts.length === 0 && (
+          </table>
+        </div>
+        {contacts.length === 0 && !loading && (
           <div className="text-center py-12 text-gray-500">
             No contacts found. Import or add contacts to get started.
           </div>
         )}
       </div>
+      
+      {/* Load More Button - Fallback */}
+      {hasMore && !loading && contacts.length > 0 && (
+        <div className="text-center py-4">
+          <button
+            onClick={onLoadMore}
+            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
+          >
+            Load More Contacts
+          </button>
+        </div>
+      )}
+      
+      {/* Loading indicator */}
+      {loading && (
+        <div className="text-center py-4">
+          <div className="inline-flex items-center px-4 py-2 font-semibold leading-6 text-sm shadow rounded-md text-white bg-indigo-500">
+            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Loading more contacts...
+          </div>
+        </div>
+      )}
+      
+      {/* End of list indicator */}
+      {!hasMore && contacts.length > 0 && (
+        <div className="text-center py-4 text-gray-500">
+          No more contacts to load
+        </div>
+      )}
     </div>
   );
 };
 
 // Follow-ups View
-const FollowUpsView = ({ followups, onRefresh }) => {
+const FollowUpsView = ({ 
+  followups, 
+  onRefresh, 
+  allFollowups, 
+  onLoadMore, 
+  hasMore, 
+  loading, 
+  onResetFollowups 
+}) => {
   const [dateFilter, setDateFilter] = useState('all');
   const [filteredFollowups, setFilteredFollowups] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [localLoading, setLocalLoading] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (loading || !hasMore) return;
+      
+      const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
+      if (scrollTop + clientHeight >= scrollHeight - 100) { // Trigger when 100px from bottom
+        if (dateFilter !== 'all') {
+          onLoadMore(dateFilter);
+        }
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [hasMore, loading, onLoadMore, dateFilter]);
 
   const completeFollowUp = async (id) => {
     try {
@@ -616,14 +802,12 @@ const FollowUpsView = ({ followups, onRefresh }) => {
   };
 
   const fetchFilteredFollowups = async () => {
-    setLoading(true);
-    try {
-      const response = await axios.get(`${API}/followups/by-date?date_filter=${dateFilter}`);
-      setFilteredFollowups(response.data.followups || []);
-    } catch (error) {
-      console.error('Failed to fetch filtered follow-ups:', error);
-    } finally {
-      setLoading(false);
+    if (dateFilter === 'all') {
+      setFilteredFollowups([]);
+    } else {
+      setLocalLoading(true);
+      onResetFollowups(dateFilter);
+      setLocalLoading(false);
     }
   };
 
@@ -635,7 +819,7 @@ const FollowUpsView = ({ followups, onRefresh }) => {
 
   const displayFollowups = dateFilter === 'all' 
     ? [...followups.overdue, ...followups.upcoming] 
-    : filteredFollowups;
+    : allFollowups;
 
   const getContactName = (followup) => {
     if (followup.contact) {
@@ -752,13 +936,13 @@ const FollowUpsView = ({ followups, onRefresh }) => {
                 {dateFilter === 'today' && '📅 Today\'s Follow-ups'}
                 {dateFilter === 'tomorrow' && '📅 Tomorrow\'s Follow-ups'}
                 {dateFilter === 'this_week' && '📅 This Week\'s Follow-ups'}
-                {' '}({filteredFollowups.length})
+                {' '}({displayFollowups.length})
               </h3>
-              {filteredFollowups.length === 0 ? (
+              {displayFollowups.length === 0 && !loading && !localLoading ? (
                 <p className="text-gray-500">No follow-ups found for this period</p>
               ) : (
                 <div className="grid gap-4">
-                  {filteredFollowups.map(followup => {
+                  {displayFollowups.map(followup => {
                     const isOverdue = followup.status === 'overdue';
                     return (
                       <div key={followup.id} className={`${isOverdue ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'} border rounded-lg p-4`}>
@@ -781,6 +965,26 @@ const FollowUpsView = ({ followups, onRefresh }) => {
                       </div>
                     );
                   })}
+                </div>
+              )}
+              
+              {/* Loading indicator for filtered followups */}
+              {dateFilter !== 'all' && loading && (
+                <div className="text-center py-4">
+                  <div className="inline-flex items-center px-4 py-2 font-semibold leading-6 text-sm shadow rounded-md text-white bg-indigo-500">
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Loading more follow-ups...
+                  </div>
+                </div>
+              )}
+              
+              {/* End of list indicator for filtered followups */}
+              {dateFilter !== 'all' && !hasMore && displayFollowups.length > 0 && (
+                <div className="text-center py-4 text-gray-500">
+                  No more follow-ups to load
                 </div>
               )}
             </div>
@@ -819,8 +1023,8 @@ const ImportView = ({ onImportComplete }) => {
   };
 
   const handleImport = async () => {
-    if (!file || !mapping.phone) {
-      alert('Please select a file and map the phone column');
+    if (!file) {
+      alert('Please select a file');
       return;
     }
 
@@ -864,7 +1068,7 @@ const ImportView = ({ onImportComplete }) => {
             <div className="grid gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Phone Column (Required) *
+                  Phone Column (Optional)
                 </label>
                 <select
                   value={mapping.phone || ''}
@@ -879,10 +1083,10 @@ const ImportView = ({ onImportComplete }) => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name Column</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Shop Name Column</label>
                 <select
-                  value={mapping.name || ''}
-                  onChange={(e) => setMapping({ ...mapping, name: e.target.value })}
+                  value={mapping.shop_name || ''}
+                  onChange={(e) => setMapping({ ...mapping, shop_name: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                 >
                   <option value="">Select column...</option>
@@ -893,10 +1097,10 @@ const ImportView = ({ onImportComplete }) => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email Column</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Address Column</label>
                 <select
-                  value={mapping.email || ''}
-                  onChange={(e) => setMapping({ ...mapping, email: e.target.value })}
+                  value={mapping.address || ''}
+                  onChange={(e) => setMapping({ ...mapping, address: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                 >
                   <option value="">Select column...</option>
@@ -907,10 +1111,52 @@ const ImportView = ({ onImportComplete }) => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Company Column</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">City Column</label>
                 <select
-                  value={mapping.company || ''}
-                  onChange={(e) => setMapping({ ...mapping, company: e.target.value })}
+                  value={mapping.city || ''}
+                  onChange={(e) => setMapping({ ...mapping, city: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="">Select column...</option>
+                  {columns.map(col => (
+                    <option key={col} value={col}>{col}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">State Column</label>
+                <select
+                  value={mapping.state || ''}
+                  onChange={(e) => setMapping({ ...mapping, state: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="">Select column...</option>
+                  {columns.map(col => (
+                    <option key={col} value={col}>{col}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status Column</label>
+                <select
+                  value={mapping.status || ''}
+                  onChange={(e) => setMapping({ ...mapping, status: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="">Select column...</option>
+                  {columns.map(col => (
+                    <option key={col} value={col}>{col}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category Column</label>
+                <select
+                  value={mapping.category || ''}
+                  onChange={(e) => setMapping({ ...mapping, category: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                 >
                   <option value="">Select column...</option>
@@ -926,7 +1172,7 @@ const ImportView = ({ onImportComplete }) => {
         {columns.length > 0 && (
           <button
             onClick={handleImport}
-            disabled={importing || !mapping.phone}
+            disabled={importing}
             className="w-full py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold disabled:bg-gray-400"
           >
             {importing ? 'Importing...' : 'Import Contacts'}
@@ -1044,7 +1290,7 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
     }
   };
 
-  const statuses = ['Connected', 'Not Attending', 'Follow-up', 'Interested', 'Not Interested'];
+  const statuses = ['Called', 'Not Attending', 'Follow-up', 'Interested', 'Not Interested', 'Irrelevant'];
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -1063,6 +1309,26 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
                 <p className="font-medium">{contact.phone}</p>
               </div>
               <div>
+                <label className="text-sm text-gray-600">Shop Name</label>
+                <p className="font-medium">{contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '-'}</p>
+              </div>
+              <div>
+                <label className="text-sm text-gray-600">Address</label>
+                <p className="font-medium">{contact.data.address || contact.data.Address || contact.data['Address'] || '-'}</p>
+              </div>
+              <div>
+                <label className="text-sm text-gray-600">City</label>
+                <p className="font-medium">{contact.data.city || contact.data.City || contact.data['City'] || '-'}</p>
+              </div>
+              <div>
+                <label className="text-sm text-gray-600">State</label>
+                <p className="font-medium">{contact.data.state || contact.data.State || contact.data['State'] || '-'}</p>
+              </div>
+              <div>
+                <label className="text-sm text-gray-600">Category</label>
+                <p className="font-medium">{contact.data.category || contact.data.Category || contact.data['Category'] || '-'}</p>
+              </div>
+              <div>
                 <label className="text-sm text-gray-600">Status</label>
                 <select
                   value={contact.status}
@@ -1074,12 +1340,6 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
                   ))}
                 </select>
               </div>
-              {Object.entries(contact.data).map(([key, value]) => (
-                <div key={key}>
-                  <label className="text-sm text-gray-600">{key}</label>
-                  <p className="font-medium">{value}</p>
-                </div>
-              ))}
               <div>
                 <label className="text-sm text-gray-600">Last Call</label>
                 <p className="font-medium">{contact.last_call_at ? new Date(contact.last_call_at).toLocaleString() : 'Never'}</p>
@@ -1164,18 +1424,22 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
 // Contact Form Modal
 const ContactFormModal = ({ onClose, onSave }) => {
   const [phone, setPhone] = useState('');
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [company, setCompany] = useState('');
+  const [shopName, setShopName] = useState('');
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [category, setCategory] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
     const data = {
       phone,
       data: {
-        name: name || undefined,
-        email: email || undefined,
-        company: company || undefined
+        shop_name: shopName || undefined,
+        address: address || undefined,
+        city: city || undefined,
+        state: state || undefined,
+        category: category || undefined
       }
     };
     onSave(data);
@@ -1202,30 +1466,55 @@ const ContactFormModal = ({ onClose, onSave }) => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Shop Name</label>
             <input
               type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={shopName}
+              onChange={(e) => setShopName(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              placeholder="Shop Name"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
             <input
               type="text"
-              value={company}
-              onChange={(e) => setCompany(e.target.value)}
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              placeholder="Street Address"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+              <input
+                type="text"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                placeholder="City"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+              <input
+                type="text"
+                value={state}
+                onChange={(e) => setState(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                placeholder="State"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+            <input
+              type="text"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              placeholder="Business Category"
             />
           </div>
           <button

@@ -660,6 +660,15 @@ const Dashboard = () => {
 // Dashboard View
 const DashboardView = ({ stats, followups }) => {
   const statuses = ['None', 'Called', 'Not Attending', 'Follow-up', 'Interested', 'Not Interested', 'Irrelevant', 'Logged In'];
+  const [selectedContact, setSelectedContact] = useState(null);
+  const [showContactDetailModal, setShowContactDetailModal] = useState(false);
+  
+  const openContactDetailModal = (followup) => {
+    if (followup.contact) {
+      setSelectedContact(followup.contact);
+      setShowContactDetailModal(true);
+    }
+  };
   
   return (
     <div>
@@ -704,11 +713,27 @@ const DashboardView = ({ stats, followups }) => {
           ) : (
             <div className="space-y-3">
               {followups.overdue.slice(0, 5).map(followup => (
-                <div key={followup.id} className="p-3 bg-red-50 rounded-lg border border-red-200">
-                  <p className="font-medium text-gray-800">{getContactName(followup)}</p>
-                  <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
-                  <p className="text-sm text-gray-600">Due: {format12Hour(followup.follow_up_date)}</p>
-                  {followup.notes && <p className="text-sm text-gray-500 mt-1">{followup.notes}</p>}
+                <div 
+                  key={followup.id} 
+                  className="p-3 bg-red-50 rounded-lg border border-red-200 cursor-pointer"
+                  onClick={() => openContactDetailModal(followup)}
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-800">{getContactName(followup)}</p>
+                      <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
+                      <p className="text-sm text-gray-600">Due: {format12Hour(followup.follow_up_date)}</p>
+                      {followup.notes && <p className="text-sm text-gray-500 mt-1">{followup.notes}</p>}
+                    </div>
+                    <a
+                      href={`tel:${getContactPhone(followup)}`}
+                      className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold ml-2"
+                      title="Call Now"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      📞 Call
+                    </a>
+                  </div>
                 </div>
               ))}
             </div>
@@ -723,17 +748,96 @@ const DashboardView = ({ stats, followups }) => {
           ) : (
             <div className="space-y-3">
               {followups.upcoming.slice(0, 5).map(followup => (
-                <div key={followup.id} className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <p className="font-medium text-gray-800">{getContactName(followup)}</p>
-                  <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
-                  <p className="text-sm text-gray-600">Due: {format12Hour(followup.follow_up_date)}</p>
-                  {followup.notes && <p className="text-sm text-gray-500 mt-1">{followup.notes}</p>}
+                <div 
+                  key={followup.id} 
+                  className="p-3 bg-blue-50 rounded-lg border border-blue-200 cursor-pointer"
+                  onClick={() => openContactDetailModal(followup)}
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-800">{getContactName(followup)}</p>
+                      <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
+                      <p className="text-sm text-gray-600">Due: {format12Hour(followup.follow_up_date)}</p>
+                      {followup.notes && <p className="text-sm text-gray-500 mt-1">{followup.notes}</p>}
+                    </div>
+                    <a
+                      href={`tel:${getContactPhone(followup)}`}
+                      className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold ml-2"
+                      title="Call Now"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      📞 Call
+                    </a>
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </div>
       </div>
+      
+      {/* Contact Detail Modal - reused from contacts section */}
+      {showContactDetailModal && selectedContact && (
+        <ContactDetailModal
+          contact={selectedContact}
+          onClose={() => setShowContactDetailModal(false)}
+          onUpdate={async (updates) => {
+            try {
+              await axios.put(`${API}/contacts/${selectedContact.id}`, updates);
+              setSelectedContact({ ...selectedContact, ...updates });
+              alert('Contact updated successfully!');
+              // Refresh global data if available
+              if (window.refreshFollowups) {
+                window.refreshFollowups();
+              }
+            } catch (error) {
+              alert('Failed to update contact');
+              setShowContactDetailModal(false);
+            }
+          }}
+          onDelete={async () => {
+            if (!window.confirm('Are you sure you want to delete this contact?')) return;
+            
+            try {
+              await axios.delete(`${API}/contacts/${selectedContact.id}`);
+              setShowContactDetailModal(false);
+              if (window.refreshFollowups) {
+                window.refreshFollowups();
+              }
+              alert('Contact deleted successfully!');
+            } catch (error) {
+              alert('Failed to delete contact');
+            }
+          }}
+          onLogCall={async () => {
+            try {
+              await axios.post(`${API}/contacts/${selectedContact.id}/call`);
+              alert('Call logged successfully!');
+              if (window.refreshActivityLogs) {
+                window.refreshActivityLogs();
+              }
+            } catch (error) {
+              alert('Failed to log call');
+            }
+          }}
+          onUpdateStatus={async (status) => {
+            try {
+              await axios.put(`${API}/contacts/${selectedContact.id}`, { status });
+              setSelectedContact({ ...selectedContact, status });
+              if (window.refreshFollowups) {
+                window.refreshFollowups();
+              }
+            } catch (error) {
+              alert('Failed to update status');
+            }
+          }}
+          onFollowupCreated={() => {
+            if (window.refreshFollowups) {
+              window.refreshFollowups();
+            }
+          }}
+        />
+      )}
     </div>
   );
 };
@@ -1123,6 +1227,15 @@ const FollowUpsView = ({
   const [dateFilter, setDateFilter] = useState('all');
   const [filteredFollowups, setFilteredFollowups] = useState([]);
   const [localLoading, setLocalLoading] = useState(false);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [selectedFollowup, setSelectedFollowup] = useState(null);
+  const [completionNotes, setCompletionNotes] = useState('');
+  const [callStatus, setCallStatus] = useState('');
+  const [scheduleNext, setScheduleNext] = useState(false);
+  const [nextFollowupDate, setNextFollowupDate] = useState('');
+  const [nextFollowupNotes, setNextFollowupNotes] = useState('');
+  const [showContactDetailModal, setShowContactDetailModal] = useState(false);
+  const [selectedContact, setSelectedContact] = useState(null);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -1140,21 +1253,74 @@ const FollowUpsView = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, [hasMore, loading, onLoadMore, dateFilter]);
 
-  const completeFollowUp = async (id) => {
+  const openCompletionModal = (followup) => {
+    setSelectedFollowup(followup);
+    setShowCompletionModal(true);
+    setCompletionNotes('');
+    setCallStatus(followup.contact?.status || '');
+    setScheduleNext(false);
+    setNextFollowupDate('');
+    setNextFollowupNotes('');
+  };
+  
+  const openContactDetailModal = (followup) => {
+    if (followup.contact) {
+      setSelectedContact(followup.contact);
+      setShowContactDetailModal(true);
+    }
+  };
+
+  const handleCompleteFollowup = async () => {
+    if (!selectedFollowup) return;
+    
     try {
-      await axios.put(`${API}/followups/${id}/complete`);
+      // Complete the current follow-up
+      await axios.put(`${API}/followups/${selectedFollowup.id}/complete`);
+      
+      // Update contact status if selected
+      if (callStatus) {
+        await axios.put(`${API}/contacts/${selectedFollowup.contact_id}`, {
+          status: callStatus
+        });
+      }
+      
+      // Add completion notes if provided
+      if (completionNotes.trim() || callStatus) {
+        const noteContent = callStatus 
+          ? `Follow-up completed - Status: ${callStatus}${completionNotes.trim() ? `. Notes: ${completionNotes}` : ''}`
+          : `Follow-up completed: ${completionNotes}`;
+        
+        await axios.post(`${API}/notes`, {
+          contact_id: selectedFollowup.contact_id,
+          content: noteContent
+        });
+      }
+      
+      // Schedule next follow-up if requested
+      if (scheduleNext && nextFollowupDate) {
+        await axios.post(`${API}/followups`, {
+          contact_id: selectedFollowup.contact_id,
+          follow_up_date: new Date(nextFollowupDate).toISOString(),
+          notes: nextFollowupNotes || 'Next follow-up scheduled'
+        });
+      }
+      
+      // Close modal and refresh data
+      setShowCompletionModal(false);
       onRefresh();
       if (dateFilter !== 'all') {
         fetchFilteredFollowups();
       }
       
-      // Also refresh dashboard follow-ups and activity logs for live updates
+      // Refresh dashboard and activity logs
       if (window.refreshFollowups) {
         window.refreshFollowups();
       }
       if (window.refreshActivityLogs) {
         window.refreshActivityLogs();
       }
+      
+      alert('Follow-up completed successfully!');
     } catch (error) {
       alert('Failed to complete follow-up');
     }
@@ -1226,7 +1392,11 @@ const FollowUpsView = ({
                 ) : (
                   <div className="grid gap-4">
                     {followups.overdue.map(followup => (
-                      <div key={followup.id} className="bg-red-50 border border-red-200 rounded-lg p-4">
+                      <div 
+                        key={followup.id} 
+                        className="bg-red-50 border border-red-200 rounded-lg p-4 cursor-pointer"
+                        onClick={() => openContactDetailModal(followup)}
+                      >
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
                             <p className="font-bold text-lg text-gray-800">{getContactName(followup)}</p>
@@ -1234,12 +1404,25 @@ const FollowUpsView = ({
                             <p className="text-sm text-red-600 font-medium mt-1">⏰ Due: {format12Hour(followup.follow_up_date)}</p>
                             {followup.notes && <p className="text-sm text-gray-700 mt-2 italic">"{followup.notes}"</p>}
                           </div>
-                          <button
-                            onClick={() => completeFollowUp(followup.id)}
-                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold"
-                          >
-                            ✓ Complete
-                          </button>
+                          <div className="flex gap-2">
+                            <a
+                              href={`tel:${getContactPhone(followup)}`}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold"
+                              title="Call Now"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              📞 Call
+                            </a>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openCompletionModal(followup);
+                              }}
+                              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold"
+                            >
+                              ✓ Complete
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1255,7 +1438,11 @@ const FollowUpsView = ({
                 ) : (
                   <div className="grid gap-4">
                     {followups.upcoming.map(followup => (
-                      <div key={followup.id} className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <div 
+                        key={followup.id} 
+                        className="bg-blue-50 border border-blue-200 rounded-lg p-4 cursor-pointer"
+                        onClick={() => openContactDetailModal(followup)}
+                      >
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
                             <p className="font-bold text-lg text-gray-800">{getContactName(followup)}</p>
@@ -1263,12 +1450,25 @@ const FollowUpsView = ({
                             <p className="text-sm text-indigo-600 font-medium mt-1">⏰ Scheduled: {format12Hour(followup.follow_up_date)}</p>
                             {followup.notes && <p className="text-sm text-gray-700 mt-2 italic">"{followup.notes}"</p>}
                           </div>
-                          <button
-                            onClick={() => completeFollowUp(followup.id)}
-                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold"
-                          >
-                            ✓ Complete
-                          </button>
+                          <div className="flex gap-2">
+                            <a
+                              href={`tel:${getContactPhone(followup)}`}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold"
+                              title="Call Now"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              📞 Call
+                            </a>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openCompletionModal(followup);
+                              }}
+                              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold"
+                            >
+                              ✓ Complete
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1293,7 +1493,11 @@ const FollowUpsView = ({
                   {displayFollowups.map(followup => {
                     const isOverdue = followup.status === 'overdue';
                     return (
-                      <div key={followup.id} className={`${isOverdue ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'} border rounded-lg p-4`}>
+                      <div 
+                        key={followup.id} 
+                        className={`${isOverdue ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'} border rounded-lg p-4 cursor-pointer`}
+                        onClick={() => openContactDetailModal(followup)}
+                      >
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
                             <p className="font-bold text-lg text-gray-800">{getContactName(followup)}</p>
@@ -1303,12 +1507,25 @@ const FollowUpsView = ({
                             </p>
                             {followup.notes && <p className="text-sm text-gray-700 mt-2 italic">"{followup.notes}"</p>}
                           </div>
-                          <button
-                            onClick={() => completeFollowUp(followup.id)}
-                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold"
-                          >
-                            ✓ Complete
-                          </button>
+                          <div className="flex gap-2">
+                            <a
+                              href={`tel:${getContactPhone(followup)}`}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold"
+                              title="Call Now"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              📞 Call
+                            </a>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openCompletionModal(followup);
+                              }}
+                              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold"
+                            >
+                              ✓ Complete
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -1338,6 +1555,190 @@ const FollowUpsView = ({
             </div>
           )}
         </>
+      )}
+      
+      {/* Follow-up Completion Modal */}
+      {showCompletionModal && selectedFollowup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="border-b px-6 py-4 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-800">Complete Follow-up</h2>
+              <button 
+                onClick={() => setShowCompletionModal(false)} 
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                &times;
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              {/* Contact Info */}
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="font-semibold text-gray-800">{getContactName(selectedFollowup)}</p>
+                <p className="text-sm text-gray-600">📞 {getContactPhone(selectedFollowup)}</p>
+                <p className="text-sm text-gray-600">Due: {format12Hour(selectedFollowup.follow_up_date)}</p>
+                {selectedFollowup.notes && (
+                  <p className="text-sm text-gray-500 mt-1 italic">"{selectedFollowup.notes}"</p>
+                )}
+              </div>
+              
+              {/* Call Status */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Call Outcome Status
+                </label>
+                <select
+                  value={callStatus}
+                  onChange={(e) => setCallStatus(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
+                >
+                  <option value="">Select call outcome...</option>
+                  <option value="Called">📞 Called - Contact established</option>
+                  <option value="Not Attending">⏸️ Not Attending - Unavailable/Busy</option>
+                  <option value="Interested">✅ Interested - Positive response</option>
+                  <option value="Not Interested">❌ Not Interested - Declined</option>
+                  <option value="Follow-up">⏰ Follow-up - Needs reconnection</option>
+                  <option value="Logged In">🎯 Logged In - Purchased & Active</option>
+                  <option value="Irrelevant">🚫 Irrelevant - Wrong target</option>
+                </select>
+              </div>
+              
+              {/* Completion Notes */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Additional Call Notes (Optional)
+                </label>
+                <textarea
+                  value={completionNotes}
+                  onChange={(e) => setCompletionNotes(e.target.value)}
+                  placeholder="Any additional details about the call..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  rows="3"
+                />
+              </div>
+              
+              {/* Schedule Next Follow-up */}
+              <div>
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={scheduleNext}
+                    onChange={(e) => setScheduleNext(e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    Schedule Next Follow-up
+                  </span>
+                </label>
+              </div>
+              
+              {scheduleNext && (
+                <div className="space-y-3 ml-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Next Follow-up Date & Time
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={nextFollowupDate}
+                      onChange={(e) => setNextFollowupDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                      required={scheduleNext}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Next Follow-up Notes (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={nextFollowupNotes}
+                      onChange={(e) => setNextFollowupNotes(e.target.value)}
+                      placeholder="Purpose of next follow-up..."
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+              )}
+              
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setShowCompletionModal(false)}
+                  className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCompleteFollowup}
+                  disabled={scheduleNext && !nextFollowupDate}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 transition font-semibold"
+                >
+                  ✓ confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Contact Detail Modal - reused from contacts section */}
+      {showContactDetailModal && selectedContact && (
+        <ContactDetailModal
+          contact={selectedContact}
+          onClose={() => setShowContactDetailModal(false)}
+          onUpdate={async (updates) => {
+            try {
+              await axios.put(`${API}/contacts/${selectedContact.id}`, updates);
+              alert('Contact updated successfully!');
+              // Refresh followups and dashboard data
+              onRefresh();
+              if (window.refreshFollowups) {
+                window.refreshFollowups();
+              }
+            } catch (error) {
+              alert('Failed to update contact');
+            }
+          }}
+          onDelete={async () => {
+            if (!window.confirm('Are you sure you want to delete this contact?')) return;
+            
+            try {
+              await axios.delete(`${API}/contacts/${selectedContact.id}`);
+              setShowContactDetailModal(false);
+              onRefresh();
+              if (window.refreshFollowups) {
+                window.refreshFollowups();
+              }
+              alert('Contact deleted successfully!');
+            } catch (error) {
+              alert('Failed to delete contact');
+            }
+          }}
+          onLogCall={async () => {
+            try {
+              await axios.post(`${API}/contacts/${selectedContact.id}/call`);
+              alert('Call logged successfully!');
+              if (window.refreshActivityLogs) {
+                window.refreshActivityLogs();
+              }
+            } catch (error) {
+              alert('Failed to log call');
+            }
+          }}
+          onUpdateStatus={async (status) => {
+            try {
+              await axios.put(`${API}/contacts/${selectedContact.id}`, { status });
+              setSelectedContact({ ...selectedContact, status });
+              if (window.refreshFollowups) {
+                window.refreshFollowups();
+              }
+            } catch (error) {
+              alert('Failed to update status');
+            }
+          }}
+          onFollowupCreated={onRefresh}
+        />
       )}
     </div>
   );

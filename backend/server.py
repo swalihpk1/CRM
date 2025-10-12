@@ -710,13 +710,17 @@ async def complete_followup(
     if not followup:
         raise HTTPException(status_code=404, detail="Follow-up not found")
     
+    # Get the contact to use phone number as target for better activity log display
+    contact = await db.contacts.find_one({"id": followup['contact_id']}, {"_id": 0})
+    target = contact['phone'] if contact else followup['contact_id']
+    
     await db.followups.update_one({"id": followup_id}, {"$set": {"status": "completed"}})
     
     await log_activity(
         current_user['id'],
         current_user['email'],
         "Completed follow-up",
-        target=followup['contact_id']
+        target=target
     )
     
     return {"message": "Follow-up marked as completed"}

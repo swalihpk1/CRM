@@ -193,6 +193,9 @@ const Dashboard = () => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
   const [showFollowUpModal, setShowFollowUpModal] = useState(false);
+  const [showGlobalMeetingModal, setShowGlobalMeetingModal] = useState(false);
+  const [globalSelectedContacts, setGlobalSelectedContacts] = useState([]);
+  const [globalMeetings, setGlobalMeetings] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [contactsPage, setContactsPage] = useState(0);
@@ -253,6 +256,18 @@ const Dashboard = () => {
     }
   }, []);
 
+  const fetchMeetings = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API}/meetings`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setGlobalMeetings(response.data);
+    } catch (error) {
+      console.error('Failed to fetch meetings:', error);
+    }
+  }, []);
+
   const fetchActivityLogs = useCallback(async (page = 0, reset = false) => {
     setLoadingActivityLogs(prev => {
       if (prev) return prev; // If already loading, don't start another request
@@ -286,6 +301,7 @@ const Dashboard = () => {
     fetchStats();
     fetchContacts(0, true);
     fetchFollowups();
+    fetchMeetings();
     fetchPaginatedFollowups(0, 'all', true);
     fetchActivityLogs(0, true);
     
@@ -294,9 +310,21 @@ const Dashboard = () => {
       Notification.requestPermission();
     }
     
+    // Global function to schedule meeting from contact details
+    window.scheduleMeetingFromContact = (contact) => {
+      console.log('Schedule meeting clicked for contact:', contact);
+      
+      // Use global meeting modal that's always available
+      setGlobalSelectedContacts([contact]);
+      setShowGlobalMeetingModal(true);
+    };
+    
     // Check for follow-ups every minute
     const interval = setInterval(checkFollowupAlerts, 60000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      delete window.scheduleMeetingFromContact;
+    };
   }, []); // Empty dependency array - only run once on mount
 
   const resetContacts = async () => {
@@ -311,13 +339,15 @@ const Dashboard = () => {
     await fetchActivityLogs(0, true);
   };
   
-  // Make fetchFollowups and resetActivityLogs available globally for live updates
+  // Make fetchFollowups, resetActivityLogs and fetchMeetings available globally for live updates
   useEffect(() => {
     window.refreshFollowups = () => fetchFollowups();
     window.refreshActivityLogs = () => resetActivityLogs();
+    window.refreshMeetings = () => fetchMeetings();
     return () => {
       delete window.refreshFollowups;
       delete window.refreshActivityLogs;
+      delete window.refreshMeetings;
     };
   }, []); // Empty dependency - use arrow functions to always call current function references
 
@@ -504,6 +534,12 @@ const Dashboard = () => {
             🔔 Follow-ups
           </button>
           <button
+            onClick={() => setView('meetings')}
+            className={`w-full text-left px-4 py-3 rounded-lg transition ${view === 'meetings' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
+          >
+            📅 Meetings
+          </button>
+          <button
             onClick={() => setView('import')}
             className={`w-full text-left px-4 py-3 rounded-lg transition ${view === 'import' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
           >
@@ -584,6 +620,12 @@ const Dashboard = () => {
               onResetFollowups={resetFollowups}
             />
           )}
+          {view === 'meetings' && (
+            <MeetingsView 
+              contacts={contacts}
+              globalMeetings={globalMeetings}
+            />
+          )}
           {view === 'import' && (
             <ImportView onImportComplete={() => { resetContacts(); fetchStats(); resetActivityLogs(); }} />
           )}
@@ -649,6 +691,39 @@ const Dashboard = () => {
               } else {
                 alert('Failed to create contact: ' + (error.response?.data?.detail || error.message));
               }
+            }
+          }}
+        />
+      )}
+      
+      {/* Global Meeting Modal */}
+      {showGlobalMeetingModal && (
+        <GlobalMeetingModal
+          contacts={contacts}
+          selectedContacts={globalSelectedContacts}
+          onClose={() => {
+            setShowGlobalMeetingModal(false);
+            setGlobalSelectedContacts([]);
+          }}
+          onSave={async (meetingData) => {
+            try {
+              const token = localStorage.getItem('token');
+              
+              // Save meeting to database
+              const response = await axios.post(`${API}/meetings`, meetingData, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              
+              // Refresh meetings list from database
+              await fetchMeetings();
+              
+              console.log('Meeting created:', response.data);
+              alert('Meeting scheduled successfully!');
+              setShowGlobalMeetingModal(false);
+              setGlobalSelectedContacts([]);
+            } catch (error) {
+              console.error('Failed to schedule meeting:', error);
+              alert('Failed to schedule meeting. Please try again.');
             }
           }}
         />
@@ -1744,6 +1819,894 @@ const FollowUpsView = ({
   );
 };
 
+// Meetings View
+const MeetingsView = ({ contacts, globalMeetings = [] }) => {
+  const [meetings, setMeetings] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showNewMeetingModal, setShowNewMeetingModal] = useState(false);
+  const [selectedContact, setSelectedContact] = useState(null);
+  const [selectedContacts, setSelectedContacts] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filteredContacts, setFilteredContacts] = useState([]);
+  const [meetingTitle, setMeetingTitle] = useState('');
+  const [meetingDate, setMeetingDate] = useState('');
+  const [meetingTime, setMeetingTime] = useState('');
+  const [meetingLocation, setMeetingLocation] = useState('');
+  const [meetingNotes, setMeetingNotes] = useState('');
+  const [dateFilter, setDateFilter] = useState('all');
+  const [customDateFilter, setCustomDateFilter] = useState('');
+  const [activeTab, setActiveTab] = useState('upcoming');
+  const [meetingSearchQuery, setMeetingSearchQuery] = useState('');
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [rescheduleTarget, setRescheduleTarget] = useState(null);
+  const [newMeetingDate, setNewMeetingDate] = useState('');
+  const [newMeetingTime, setNewMeetingTime] = useState('');
+
+  useEffect(() => {
+    fetchMeetings();
+    
+    // Global function to open meeting modal with pre-selected contacts
+    window.openNewMeetingModal = (preselectedContacts) => {
+      console.log('openNewMeetingModal called with contacts:', preselectedContacts);
+      resetMeetingForm();
+      if (Array.isArray(preselectedContacts) && preselectedContacts.length > 0) {
+        console.log('Setting selected contacts:', preselectedContacts);
+        setSelectedContacts(preselectedContacts);
+      }
+      console.log('Opening meeting modal');
+      setShowNewMeetingModal(true);
+    };
+    
+    // Check if there's a pending meeting contact from scheduleMeetingFromContact
+    if (window.pendingMeetingContact) {
+      console.log('Found pending meeting contact:', window.pendingMeetingContact);
+      setTimeout(() => {
+        if (window.openNewMeetingModal && window.pendingMeetingContact) {
+          window.openNewMeetingModal([window.pendingMeetingContact]);
+          window.pendingMeetingContact = null;
+        }
+      }, 200);
+    }
+    
+    return () => {
+      delete window.openNewMeetingModal;
+    };
+  }, [globalMeetings]);
+
+  useEffect(() => {
+    if (searchQuery) {
+      const filtered = contacts.filter(contact => {
+        const name = contact.data?.name || contact.data?.Name || '';
+        const shopName = contact.data?.shop_name || contact.data?.Shop_Name || contact.data?.['Shop Name'] || '';
+        const phone = contact.phone || '';
+        
+        const searchLower = searchQuery.toLowerCase();
+        return name.toLowerCase().includes(searchLower) || 
+               shopName.toLowerCase().includes(searchLower) ||
+               phone.includes(searchQuery);
+      });
+      setFilteredContacts(filtered);
+    } else {
+      setFilteredContacts([]);
+    }
+  }, [searchQuery, contacts]);
+  
+  const filterMeetingsByDate = (meetings, filter) => {
+    if (filter === 'all') return meetings;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const nextWeekEnd = new Date(today);
+    nextWeekEnd.setDate(nextWeekEnd.getDate() + 7);
+    
+    return meetings.filter(meeting => {
+      const meetingDate = new Date(meeting.date);
+      meetingDate.setHours(0, 0, 0, 0);
+      
+      switch (filter) {
+        case 'today':
+          return meetingDate.getTime() === today.getTime();
+        case 'tomorrow':
+          return meetingDate.getTime() === tomorrow.getTime();
+        case 'this-week':
+          return meetingDate >= today && meetingDate < nextWeekEnd;
+        case 'custom':
+          if (!customDateFilter) return false;
+          const customDate = new Date(customDateFilter);
+          customDate.setHours(0, 0, 0, 0);
+          return meetingDate.getTime() === customDate.getTime();
+        default:
+          return true;
+      }
+    });
+  };
+
+  const fetchMeetings = async () => {
+    // Use globalMeetings from Dashboard (already fetched from database)
+    setMeetings(globalMeetings);
+  };
+
+  const updateMeetingStatus = async (meetingId, status) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(`${API}/meetings/${meetingId}/status`, 
+        { status: status }, 
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      // Refresh meetings by calling parent's fetchMeetings
+      if (window.refreshMeetings) {
+        window.refreshMeetings();
+      }
+      
+      alert(`Meeting ${status} successfully!`);
+    } catch (error) {
+      console.error('Failed to update meeting status:', error);
+      alert('Failed to update meeting status');
+    }
+  };
+
+  const deleteMeeting = async (meetingId) => {
+    if (!confirm('Are you sure you want to delete this meeting?')) return;
+    
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`${API}/meetings/${meetingId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // Refresh meetings by calling parent's fetchMeetings
+      if (window.refreshMeetings) {
+        window.refreshMeetings();
+      }
+      
+      alert('Meeting deleted successfully!');
+    } catch (error) {
+      console.error('Failed to delete meeting:', error);
+      alert('Failed to delete meeting');
+    }
+  };
+
+  const rescheduleMeeting = async () => {
+    if (!rescheduleTarget || !newMeetingDate) {
+      alert('Please select a new date');
+      return;
+    }
+    
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(`${API}/meetings/${rescheduleTarget.id}`, 
+        { 
+          date: newMeetingDate,
+          time: newMeetingTime || null
+        }, 
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      // Refresh meetings
+      if (window.refreshMeetings) {
+        window.refreshMeetings();
+      }
+      
+      setShowRescheduleModal(false);
+      setRescheduleTarget(null);
+      setNewMeetingDate('');
+      setNewMeetingTime('');
+      alert('Meeting rescheduled successfully!');
+    } catch (error) {
+      console.error('Failed to reschedule meeting:', error);
+      alert('Failed to reschedule meeting');
+    }
+  };
+
+  const filterMeetingsBySearch = (meetings) => {
+    if (!meetingSearchQuery) return meetings;
+    
+    const query = meetingSearchQuery.toLowerCase();
+    return meetings.filter(meeting => 
+      meeting.title.toLowerCase().includes(query) ||
+      meeting.location?.toLowerCase().includes(query) ||
+      meeting.notes?.toLowerCase().includes(query) ||
+      meeting.attendees?.some(attendee => 
+        attendee.name.toLowerCase().includes(query) ||
+        attendee.phone.includes(query)
+      )
+    );
+  };
+
+
+
+  const handleContactSelection = (contact) => {
+    const isAlreadySelected = selectedContacts.some(c => c.id === contact.id);
+    
+    if (isAlreadySelected) {
+      setSelectedContacts(selectedContacts.filter(c => c.id !== contact.id));
+    } else {
+      setSelectedContacts([...selectedContacts, contact]);
+    }
+  };
+
+  const resetMeetingForm = () => {
+    setMeetingTitle('');
+    setMeetingDate('');
+    setMeetingTime('');
+    setMeetingLocation('');
+    setMeetingNotes('');
+    setSelectedContacts([]);
+    setSearchQuery('');
+  };
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-3xl font-bold text-gray-800">Meetings</h2>
+        <button
+          onClick={() => setShowNewMeetingModal(true)}
+          className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
+        >
+          + Schedule Meeting
+        </button>
+      </div>
+      
+      {/* Search Bar */}
+      <div className="bg-white rounded-xl shadow-md p-4 mb-4">
+        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <input
+              type="text"
+              placeholder="Search meetings by title, location, notes, or attendees..."
+              value={meetingSearchQuery}
+              onChange={(e) => setMeetingSearchQuery(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+          </div>
+          {meetingSearchQuery && (
+            <button
+              onClick={() => setMeetingSearchQuery('')}
+              className="px-3 py-2 text-gray-500 hover:text-gray-700 transition"
+              title="Clear search"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Date filters */}
+      <div className="bg-white rounded-xl shadow-md p-4 mb-6 flex flex-wrap gap-4">
+        <div className="flex gap-2 items-center flex-wrap">
+          <button
+            onClick={() => setDateFilter('all')}
+            className={`px-4 py-2 rounded-lg transition ${dateFilter === 'all' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+          >
+            All Meetings
+          </button>
+          <button
+            onClick={() => setDateFilter('today')}
+            className={`px-4 py-2 rounded-lg transition ${dateFilter === 'today' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+          >
+            Today
+          </button>
+          <button
+            onClick={() => setDateFilter('tomorrow')}
+            className={`px-4 py-2 rounded-lg transition ${dateFilter === 'tomorrow' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+          >
+            Tomorrow
+          </button>
+          <button
+            onClick={() => setDateFilter('this-week')}
+            className={`px-4 py-2 rounded-lg transition ${dateFilter === 'this-week' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+          >
+            This Week
+          </button>
+        </div>
+        <div className="flex gap-2 items-center ml-auto">
+          <input
+            type="date"
+            value={customDateFilter}
+            onChange={(e) => {
+              setCustomDateFilter(e.target.value);
+              if (e.target.value) {
+                setDateFilter('custom');
+              }
+            }}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+          />
+          {customDateFilter && (
+            <button 
+              onClick={() => {
+                setCustomDateFilter('');
+                setDateFilter('all');
+              }}
+              className="text-gray-500 hover:text-gray-700"
+              title="Clear custom date"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-12 text-gray-600">Loading meetings...</div>
+      ) : meetings.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-md p-8 text-center">
+          <div className="text-6xl mb-4">📅</div>
+          <h3 className="text-xl font-semibold text-gray-700 mb-2">No Meetings Scheduled</h3>
+          <p className="text-gray-500 mb-6">Schedule your first meeting to get started</p>
+          <button
+            onClick={() => setShowNewMeetingModal(true)}
+            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
+          >
+            + Schedule Meeting
+          </button>
+        </div>
+      ) : (
+        <>
+          {(() => {
+            const dateFilteredMeetings = filterMeetingsByDate(meetings, dateFilter);
+            const searchFilteredMeetings = filterMeetingsBySearch(dateFilteredMeetings);
+            const upcomingMeetings = searchFilteredMeetings.filter(meeting => meeting.status === 'scheduled');
+            const completedMeetings = searchFilteredMeetings.filter(meeting => meeting.status === 'completed');
+            const cancelledMeetings = searchFilteredMeetings.filter(meeting => meeting.status === 'cancelled');
+            
+            if (searchFilteredMeetings.length === 0) {
+              return (
+                <div className="bg-white rounded-xl shadow-md p-6 text-center">
+                  <div className="text-4xl mb-3">📅</div>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">No Meetings Found</h3>
+                  <p className="text-gray-500">
+                    {meetingSearchQuery 
+                      ? `No meetings match "${meetingSearchQuery}"` 
+                      : "No meetings scheduled for the selected date filter"
+                    }
+                  </p>
+                  {meetingSearchQuery && (
+                    <button
+                      onClick={() => setMeetingSearchQuery('')}
+                      className="mt-3 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+                    >
+                      Clear Search
+                    </button>
+                  )}
+                </div>
+              );
+            }
+            
+            return (
+              <div className="bg-white rounded-xl shadow-md overflow-hidden">
+                {/* Tab Navigation */}
+                <div className="border-b border-gray-200">
+                  <nav className="flex">
+                    <button
+                      onClick={() => setActiveTab('upcoming')}
+                      className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                        activeTab === 'upcoming'
+                          ? 'border-green-500 text-green-600 bg-green-50'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      📅 Upcoming ({upcomingMeetings.length})
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('completed')}
+                      className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                        activeTab === 'completed'
+                          ? 'border-blue-500 text-blue-600 bg-blue-50'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      ✅ Completed ({completedMeetings.length})
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('cancelled')}
+                      className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                        activeTab === 'cancelled'
+                          ? 'border-red-500 text-red-600 bg-red-50'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      ❌ Cancelled ({cancelledMeetings.length})
+                    </button>
+                  </nav>
+                </div>
+
+                {/* Tab Content */}
+                <div className="p-6">
+                  {/* Upcoming Meetings Tab */}
+                  {activeTab === 'upcoming' && (
+                    <div>
+                      {upcomingMeetings.length === 0 ? (
+                        <div className="text-center py-8">
+                          <div className="text-4xl mb-3">📅</div>
+                          <h3 className="text-lg font-semibold text-gray-700 mb-2">No Upcoming Meetings</h3>
+                          <p className="text-gray-500 mb-4">Schedule your next meeting to get started</p>
+                          <button
+                            onClick={() => setShowNewMeetingModal(true)}
+                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold"
+                          >
+                            + Schedule Meeting
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {upcomingMeetings.map(meeting => (
+                            <div key={meeting.id} className="bg-gray-50 rounded-lg p-4">
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1">
+                                  <h3 className="text-lg font-semibold text-indigo-700">{meeting.title}</h3>
+                                  <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
+                                    <span>📅 {meeting.date} {meeting.time && `at ${meeting.time}`}</span>
+                                    {meeting.location && <span>📍 {meeting.location}</span>}
+                                  </div>
+                                  {meeting.notes && (
+                                    <p className="text-gray-600 text-sm mt-1 italic">"{meeting.notes}"</p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-block px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    ✓ Scheduled
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              {meeting.attendees && meeting.attendees.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <div className="flex flex-wrap gap-1">
+                                    {meeting.attendees.map(attendee => (
+                                      <span key={attendee.id} className="inline-flex items-center bg-indigo-50 text-indigo-700 rounded px-2 py-1 text-xs">
+                                        {attendee.name} ({attendee.phone})
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              <div className="mt-3 flex gap-2 flex-wrap">
+                                <button 
+                                  onClick={() => updateMeetingStatus(meeting.id, 'completed')}
+                                  className="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition"
+                                >
+                                  ✓ Complete
+                                </button>
+                                <button 
+                                  onClick={() => {
+                                    setRescheduleTarget(meeting);
+                                    setNewMeetingDate(meeting.date);
+                                    setNewMeetingTime(meeting.time || '');
+                                    setShowRescheduleModal(true);
+                                  }}
+                                  className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+                                >
+                                  📅 Reschedule
+                                </button>
+                                <button 
+                                  onClick={() => updateMeetingStatus(meeting.id, 'cancelled')}
+                                  className="px-3 py-1 text-xs bg-orange-600 text-white rounded hover:bg-orange-700 transition"
+                                >
+                                  ⏸️ Cancel
+                                </button>
+                                <button 
+                                  onClick={() => deleteMeeting(meeting.id)}
+                                  className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition"
+                                >
+                                  🗑️ Delete
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Completed Meetings Tab */}
+                  {activeTab === 'completed' && (
+                    <div>
+                      {completedMeetings.length === 0 ? (
+                        <div className="text-center py-8">
+                          <div className="text-4xl mb-3">✅</div>
+                          <h3 className="text-lg font-semibold text-gray-700 mb-2">No Completed Meetings</h3>
+                          <p className="text-gray-500">Completed meetings will appear here</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {completedMeetings.map(meeting => (
+                            <div key={meeting.id} className="bg-blue-50 rounded-lg p-4">
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1">
+                                  <h3 className="text-lg font-semibold text-gray-700">{meeting.title}</h3>
+                                  <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
+                                    <span>📅 {meeting.date} {meeting.time && `at ${meeting.time}`}</span>
+                                    {meeting.location && <span>📍 {meeting.location}</span>}
+                                  </div>
+                                  {meeting.notes && (
+                                    <p className="text-gray-600 text-sm mt-1 italic">"{meeting.notes}"</p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-block px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    ✓ Completed
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              {meeting.attendees && meeting.attendees.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-blue-200">
+                                  <div className="flex flex-wrap gap-1">
+                                    {meeting.attendees.map(attendee => (
+                                      <span key={attendee.id} className="inline-flex items-center bg-blue-100 text-blue-700 rounded px-2 py-1 text-xs">
+                                        {attendee.name} ({attendee.phone})
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              <div className="mt-3 flex gap-2">
+                                <button 
+                                  onClick={() => deleteMeeting(meeting.id)}
+                                  className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Cancelled Meetings Tab */}
+                  {activeTab === 'cancelled' && (
+                    <div>
+                      {cancelledMeetings.length === 0 ? (
+                        <div className="text-center py-8">
+                          <div className="text-4xl mb-3">❌</div>
+                          <h3 className="text-lg font-semibold text-gray-700 mb-2">No Cancelled Meetings</h3>
+                          <p className="text-gray-500">Cancelled meetings will appear here</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {cancelledMeetings.map(meeting => (
+                            <div key={meeting.id} className="bg-red-50 rounded-lg p-4">
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1">
+                                  <h3 className="text-lg font-semibold text-gray-600 line-through">{meeting.title}</h3>
+                                  <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
+                                    <span className="line-through">📅 {meeting.date} {meeting.time && `at ${meeting.time}`}</span>
+                                    {meeting.location && <span className="line-through">📍 {meeting.location}</span>}
+                                  </div>
+                                  {meeting.notes && (
+                                    <p className="text-gray-500 text-sm mt-1 italic line-through">"{meeting.notes}"</p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-block px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                    ✗ Cancelled
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              {meeting.attendees && meeting.attendees.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-red-200">
+                                  <div className="flex flex-wrap gap-1">
+                                    {meeting.attendees.map(attendee => (
+                                      <span key={attendee.id} className="inline-flex items-center bg-red-100 text-red-700 rounded px-2 py-1 text-xs line-through">
+                                        {attendee.name} ({attendee.phone})
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              <div className="mt-3 flex gap-2">
+                                <button 
+                                  onClick={() => deleteMeeting(meeting.id)}
+                                  className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </>
+      )}
+
+      {/* New Meeting Modal */}
+      {showNewMeetingModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-gray-800">Schedule New Meeting</h2>
+              <button onClick={() => setShowNewMeetingModal(false)} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Meeting Form */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Meeting Title *</label>
+                  <input
+                    type="text"
+                    value={meetingTitle}
+                    onChange={(e) => setMeetingTitle(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                    placeholder="e.g., Product Demo, Contract Discussion"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+                    <input
+                      type="date"
+                      value={meetingDate}
+                      onChange={(e) => setMeetingDate(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Time *</label>
+                    <input
+                      type="time"
+                      value={meetingTime}
+                      onChange={(e) => setMeetingTime(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Duration (minutes)</label>
+                    <input
+                      type="number"
+                      value={meetingDuration}
+                      onChange={(e) => setMeetingDuration(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                      min="15"
+                      step="15"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Meeting Type</label>
+                    <select
+                      value={meetingType}
+                      onChange={(e) => setMeetingType(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                    >
+                      <option value="in-person">In Person</option>
+                      <option value="virtual">Virtual</option>
+                      <option value="phone">Phone Call</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                  <input
+                    type="text"
+                    value={meetingLocation}
+                    onChange={(e) => setMeetingLocation(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                    placeholder="e.g., Office, Zoom link, etc."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                  <textarea
+                    value={meetingNotes}
+                    onChange={(e) => setMeetingNotes(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                    rows="3"
+                    placeholder="Meeting agenda, things to prepare, etc."
+                  ></textarea>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select
+                    value={meetingStatus}
+                    onChange={(e) => setMeetingStatus(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="scheduled">Scheduled</option>
+                    <option value="tentative">Tentative</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Contact Selection */}
+              <div className="border-t pt-6">
+                <h3 className="text-lg font-semibold mb-3">Select Attendees *</h3>
+                <div className="mb-4">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search contacts..."
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+
+                {/* Selected Contacts */}
+                {selectedContacts.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Selected:</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedContacts.map(contact => (
+                        <div
+                          key={contact.id}
+                          className="inline-flex items-center bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1"
+                        >
+                          <span className="text-sm text-indigo-800">
+                            {contact.data?.shop_name || contact.data?.Shop_Name || contact.data?.['Shop Name'] || contact.phone}
+                          </span>
+                          <button
+                            onClick={() => handleContactSelection(contact)}
+                            className="ml-2 text-indigo-600 hover:text-indigo-800"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Contact Search Results */}
+                {searchQuery && filteredContacts.length > 0 && (
+                  <div className="max-h-60 overflow-y-auto border rounded-lg divide-y">
+                    {filteredContacts.map(contact => {
+                      const isSelected = selectedContacts.some(c => c.id === contact.id);
+                      const shopName = contact.data?.shop_name || contact.data?.Shop_Name || contact.data?.['Shop Name'];
+                      const contactName = contact.data?.name || contact.data?.Name;
+                      
+                      return (
+                        <div
+                          key={contact.id}
+                          onClick={() => handleContactSelection(contact)}
+                          className={`p-3 cursor-pointer ${isSelected ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}
+                        >
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              readOnly
+                              className="mr-3 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+                            />
+                            <div>
+                              {shopName && <p className="font-medium text-gray-800">{shopName}</p>}
+                              {contactName && <p className="text-sm text-gray-600">{contactName}</p>}
+                              <p className="text-sm text-gray-600">{contact.phone}</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {searchQuery && filteredContacts.length === 0 && (
+                  <div className="text-center py-4 text-gray-500">
+                    No contacts found matching "{searchQuery}"
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4 border-t">
+                <button
+                  onClick={() => setShowNewMeetingModal(false)}
+                  className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateMeeting}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
+                >
+                  Schedule Meeting
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reschedule Meeting Modal */}
+      {showRescheduleModal && rescheduleTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="border-b px-6 py-4 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-800">Reschedule Meeting</h2>
+              <button 
+                onClick={() => {
+                  setShowRescheduleModal(false);
+                  setRescheduleTarget(null);
+                  setNewMeetingDate('');
+                  setNewMeetingTime('');
+                }} 
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">{rescheduleTarget.title}</h3>
+                <p className="text-sm text-gray-600">
+                  Current: {rescheduleTarget.date} {rescheduleTarget.time && `at ${rescheduleTarget.time}`}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Date *</label>
+                <input
+                  type="date"
+                  value={newMeetingDate}
+                  onChange={(e) => setNewMeetingDate(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Time</label>
+                <input
+                  type="time"
+                  value={newMeetingTime}
+                  onChange={(e) => setNewMeetingTime(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={rescheduleMeeting}
+                  className="flex-1 bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition font-semibold"
+                >
+                  Reschedule Meeting
+                </button>
+                <button
+                  onClick={() => {
+                    setShowRescheduleModal(false);
+                    setRescheduleTarget(null);
+                    setNewMeetingDate('');
+                    setNewMeetingTime('');
+                  }}
+                  className="flex-1 bg-gray-500 text-white py-2 rounded-lg hover:bg-gray-600 transition font-semibold"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Import View
 const ImportView = ({ onImportComplete }) => {
   const [file, setFile] = useState(null);
@@ -2530,6 +3493,20 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
               >
                 Delete Contact
               </button>
+              <button
+                onClick={() => {
+                  console.log('Schedule Meeting button clicked', contact);
+                  if (window.scheduleMeetingFromContact) {
+                    window.scheduleMeetingFromContact(contact);
+                  } else {
+                    console.error('scheduleMeetingFromContact function not available');
+                  }
+                }}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                title="Schedule a meeting with this contact"
+              >
+                📅 Schedule Meeting
+              </button>
             </div>
           </div>
 
@@ -2585,6 +3562,241 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
                 Create Follow-up
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Global Meeting Modal (can be used from any view)
+const GlobalMeetingModal = ({ contacts, selectedContacts, onClose, onSave }) => {
+  const [meetingTitle, setMeetingTitle] = useState('');
+  const [meetingDate, setMeetingDate] = useState('');
+  const [meetingTime, setMeetingTime] = useState('');
+  const [meetingLocation, setMeetingLocation] = useState('');
+  const [meetingNotes, setMeetingNotes] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentSelectedContacts, setCurrentSelectedContacts] = useState(selectedContacts || []);
+  const [filteredContacts, setFiltereredContacts] = useState([]);
+
+  useEffect(() => {
+    setCurrentSelectedContacts(selectedContacts || []);
+  }, [selectedContacts]);
+
+  useEffect(() => {
+    if (searchQuery) {
+      const filtered = contacts.filter(contact => {
+        const name = contact.data?.name || contact.data?.Name || '';
+        const shopName = contact.data?.shop_name || contact.data?.Shop_Name || contact.data?.['Shop Name'] || '';
+        const phone = contact.phone || '';
+        
+        const searchLower = searchQuery.toLowerCase();
+        return name.toLowerCase().includes(searchLower) || 
+               shopName.toLowerCase().includes(searchLower) ||
+               phone.includes(searchQuery);
+      });
+      setFiltereredContacts(filtered);
+    } else {
+      setFiltereredContacts([]);
+    }
+  }, [searchQuery, contacts]);
+
+  const handleContactSelection = (contact) => {
+    const isAlreadySelected = currentSelectedContacts.some(c => c.id === contact.id);
+    
+    if (isAlreadySelected) {
+      setCurrentSelectedContacts(currentSelectedContacts.filter(c => c.id !== contact.id));
+    } else {
+      setCurrentSelectedContacts([...currentSelectedContacts, contact]);
+    }
+  };
+
+  const handleSave = () => {
+    if (!meetingTitle || !meetingDate || currentSelectedContacts.length === 0) {
+      alert('Please fill in all required fields and select at least one contact.');
+      return;
+    }
+
+    const meetingData = {
+      title: meetingTitle,
+      date: meetingDate,
+      time: meetingTime || '',
+      location: meetingLocation,
+      notes: meetingNotes,
+      attendees: currentSelectedContacts.map(contact => ({
+        id: contact.id,
+        name: contact.data?.shop_name || contact.data?.Shop_Name || contact.data?.['Shop Name'] || contact.phone,
+        phone: contact.phone
+      }))
+    };
+
+    onSave(meetingData);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
+          <h2 className="text-2xl font-bold text-gray-800">Schedule New Meeting</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Meeting Form */}
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Meeting Title *</label>
+              <input
+                type="text"
+                value={meetingTitle}
+                onChange={(e) => setMeetingTitle(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                placeholder="e.g., Product Demo, Contract Discussion"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+                <input
+                  type="date"
+                  value={meetingDate}
+                  onChange={(e) => setMeetingDate(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
+                <input
+                  type="time"
+                  value={meetingTime}
+                  onChange={(e) => setMeetingTime(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+              <input
+                type="text"
+                value={meetingLocation}
+                onChange={(e) => setMeetingLocation(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                placeholder="e.g., Office, Zoom link, etc."
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+              <textarea
+                value={meetingNotes}
+                onChange={(e) => setMeetingNotes(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                rows="3"
+                placeholder="Meeting agenda, things to prepare, etc."
+              ></textarea>
+            </div>
+          </div>
+
+          {/* Contact Selection */}
+          <div className="border-t pt-6">
+            <h3 className="text-lg font-semibold mb-3">Attendees *</h3>
+            
+            {/* Selected Contacts */}
+            {currentSelectedContacts.length > 0 && (
+              <div className="mb-4">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">Selected:</h4>
+                <div className="flex flex-wrap gap-2">
+                  {currentSelectedContacts.map(contact => (
+                    <div
+                      key={contact.id}
+                      className="inline-flex items-center bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1"
+                    >
+                      <span className="text-sm text-indigo-800">
+                        {contact.data?.shop_name || contact.data?.Shop_Name || contact.data?.['Shop Name'] || contact.phone}
+                      </span>
+                      <button
+                        onClick={() => handleContactSelection(contact)}
+                        className="ml-2 text-indigo-600 hover:text-indigo-800"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mb-4">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search contacts..."
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            {/* Contact Search Results */}
+            {searchQuery && filteredContacts.length > 0 && (
+              <div className="max-h-60 overflow-y-auto border rounded-lg divide-y">
+                {filteredContacts.map(contact => {
+                  const isSelected = currentSelectedContacts.some(c => c.id === contact.id);
+                  const shopName = contact.data?.shop_name || contact.data?.Shop_Name || contact.data?.['Shop Name'];
+                  const contactName = contact.data?.name || contact.data?.Name;
+                  
+                  return (
+                    <div
+                      key={contact.id}
+                      onClick={() => handleContactSelection(contact)}
+                      className={`p-3 cursor-pointer ${isSelected ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}
+                    >
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          readOnly
+                          className="mr-3 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+                        />
+                        <div>
+                          {shopName && <p className="font-medium text-gray-800">{shopName}</p>}
+                          {contactName && <p className="text-sm text-gray-600">{contactName}</p>}
+                          <p className="text-sm text-gray-600">{contact.phone}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {searchQuery && filteredContacts.length === 0 && (
+              <div className="text-center py-4 text-gray-500">
+                No contacts found matching "{searchQuery}"
+              </div>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 pt-4 border-t">
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition font-semibold"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
+            >
+              Schedule Meeting
+            </button>
           </div>
         </div>
       </div>

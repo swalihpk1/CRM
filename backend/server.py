@@ -106,6 +106,28 @@ class FollowUpCreate(BaseModel):
     follow_up_date: str
     notes: Optional[str] = None
 
+class Meeting(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    user_email: str
+    title: str
+    date: str
+    time: Optional[str] = None
+    location: Optional[str] = None
+    notes: Optional[str] = None
+    attendees: List[Dict[str, Any]] = []
+    status: str = "scheduled"  # scheduled, completed, cancelled
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class MeetingCreate(BaseModel):
+    title: str
+    date: str
+    time: Optional[str] = None
+    location: Optional[str] = None
+    notes: Optional[str] = None
+    attendees: List[Dict[str, Any]] = []
+
 class ActivityLog(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -787,6 +809,144 @@ async def get_activity_logs(
 ):
     logs = await db.activity_logs.find({}, {"_id": 0}).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
     return logs
+
+# ============ MEETING ROUTES ============
+
+@api_router.post("/meetings", response_model=Meeting)
+async def create_meeting(
+    meeting_data: MeetingCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    meeting = Meeting(
+        user_id=current_user['id'],
+        user_email=current_user['email'],
+        **meeting_data.model_dump()
+    )
+    await db.meetings.insert_one(meeting.model_dump())
+    
+    await log_activity(
+        current_user['id'],
+        current_user['email'],
+        "Created meeting",
+        target=meeting.title,
+        details=f"Scheduled for {meeting.date} {meeting.time or ''} with {len(meeting.attendees)} attendees"
+    )
+    
+    return meeting
+
+@api_router.get("/meetings", response_model=List[Meeting])
+async def get_meetings(
+    skip: int = 0,
+    limit: int = 100,
+    status: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    query = {"user_id": current_user['id']}
+    if status:
+        query["status"] = status
+    
+    meetings = await db.meetings.find(query, {"_id": 0}).sort("date", 1).skip(skip).limit(limit).to_list(limit)
+    return meetings
+
+@api_router.get("/meetings/{meeting_id}", response_model=Meeting)
+async def get_meeting(
+    meeting_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    meeting = await db.meetings.find_one({"id": meeting_id, "user_id": current_user['id']}, {"_id": 0})
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    return meeting
+
+class MeetingStatusUpdate(BaseModel):
+    status: str
+
+class MeetingUpdate(BaseModel):
+    title: Optional[str] = None
+    date: Optional[str] = None
+    time: Optional[str] = None
+    location: Optional[str] = None
+    notes: Optional[str] = None
+    attendees: Optional[List[Dict[str, Any]]] = None
+    status: Optional[str] = None
+
+@api_router.put("/meetings/{meeting_id}")
+async def update_meeting(
+    meeting_id: str,
+    meeting_update: MeetingUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    meeting = await db.meetings.find_one({"id": meeting_id, "user_id": current_user['id']}, {"_id": 0})
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    # Build update data from non-None fields
+    update_data = {k: v for k, v in meeting_update.model_dump().items() if v is not None}
+    
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No update data provided")
+    
+    await db.meetings.update_one({"id": meeting_id}, {"$set": update_data})
+    
+    # Determine action for logging
+    action = "Updated meeting"
+    if "date" in update_data or "time" in update_data:
+        action = "Rescheduled meeting"
+    elif "status" in update_data:
+        action = f"Updated meeting status to {update_data['status']}"
+    
+    await log_activity(
+        current_user['id'],
+        current_user['email'],
+        action,
+        target=meeting['title']
+    )
+    
+    return {"message": "Meeting updated successfully"}
+
+@api_router.put("/meetings/{meeting_id}/status")
+async def update_meeting_status(
+    meeting_id: str,
+    status_update: MeetingStatusUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    if status_update.status not in ["scheduled", "completed", "cancelled"]:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    
+    meeting = await db.meetings.find_one({"id": meeting_id, "user_id": current_user['id']}, {"_id": 0})
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    await db.meetings.update_one({"id": meeting_id}, {"$set": {"status": status_update.status}})
+    
+    await log_activity(
+        current_user['id'],
+        current_user['email'],
+        f"Updated meeting status to {status_update.status}",
+        target=meeting['title']
+    )
+    
+    return {"message": f"Meeting status updated to {status_update.status}"}
+
+@api_router.delete("/meetings/{meeting_id}")
+async def delete_meeting(
+    meeting_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    meeting = await db.meetings.find_one({"id": meeting_id, "user_id": current_user['id']}, {"_id": 0})
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    await db.meetings.delete_one({"id": meeting_id})
+    
+    await log_activity(
+        current_user['id'],
+        current_user['email'],
+        "Deleted meeting",
+        target=meeting['title']
+    )
+    
+    return {"message": "Meeting deleted successfully"}
 
 # ============ SCHEDULER FOR FOLLOW-UP ALERTS ============
 

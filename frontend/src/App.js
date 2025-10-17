@@ -421,18 +421,26 @@ const Dashboard = () => {
     }
   };
 
-  const handleLogCall = async (contactId) => {
-    try {
-      await axios.post(`${API}/contacts/${contactId}/call`);
-      alert('Call logged successfully!');
-      resetActivityLogs();
-      // Also refresh global activity logs if available
-      if (window.refreshActivityLogs) {
-        window.refreshActivityLogs();
+  const handleLogCall = async (contactId, phone) => {
+    // Find the contact to get the phone number
+    const contact = contacts.find(c => c.id === contactId);
+    if (!contact) return;
+    
+    // Set a timeout to show the confirmation after a short delay (giving time for the call to be initiated)
+    setTimeout(async () => {
+      if (window.confirm('Did you complete the call?')) {
+        try {
+          await axios.post(`${API}/contacts/${contactId}/call`);
+          resetActivityLogs();
+          // Also refresh global activity logs if available
+          if (window.refreshActivityLogs) {
+            window.refreshActivityLogs();
+          }
+        } catch (error) {
+          alert('Failed to log call');
+        }
       }
-    } catch (error) {
-      alert('Failed to log call');
-    }
+    }, 1000); // 1 second delay
   };
 
   const handleDeleteContact = async (contactId) => {
@@ -546,6 +554,12 @@ const Dashboard = () => {
             📤 Import
           </button>
           <button
+            onClick={() => setView('demos')}
+            className={`w-full text-left px-4 py-3 rounded-lg transition ${view === 'demos' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
+          >
+            🎬 Demo Reports
+          </button>
+          <button
             onClick={() => setView('activity')}
             className={`w-full text-left px-4 py-3 rounded-lg transition ${view === 'activity' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
           >
@@ -628,6 +642,9 @@ const Dashboard = () => {
           )}
           {view === 'import' && (
             <ImportView onImportComplete={() => { resetContacts(); fetchStats(); resetActivityLogs(); }} />
+          )}
+          {view === 'demos' && (
+            <DemoReportsView />
           )}
           {view === 'activity' && (
             <ActivityLogView 
@@ -717,6 +734,11 @@ const Dashboard = () => {
               // Refresh meetings list from database
               await fetchMeetings();
               
+              // Refresh activity logs
+              if (window.refreshActivityLogs) {
+                window.refreshActivityLogs();
+              }
+              
               console.log('Meeting created:', response.data);
               alert('Meeting scheduled successfully!');
               setShowGlobalMeetingModal(false);
@@ -800,14 +822,44 @@ const DashboardView = ({ stats, followups }) => {
                       <p className="text-sm text-gray-600">Due: {format12Hour(followup.follow_up_date)}</p>
                       {followup.notes && <p className="text-sm text-gray-500 mt-1">{followup.notes}</p>}
                     </div>
-                    <a
-                      href={`tel:${getContactPhone(followup)}`}
-                      className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold ml-2"
-                      title="Call Now"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      📞 Call
-                    </a>
+                    <div className="flex gap-1 ml-2">
+                      <a
+                        href={`tel:${getContactPhone(followup)}`}
+                        className="px-2 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 text-xs font-semibold"
+                        title="Call Now"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        📞
+                      </a>
+                      <button
+                        className="px-2 py-1 bg-orange-600 text-white rounded-md hover:bg-orange-700 text-xs font-semibold"
+                        title="Mark Demo Given"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            // Check if demo already exists
+                            const demoResponse = await axios.get(`${API}/contacts/${followup.contact_id}/demos`);
+                            if (demoResponse.data.length > 0) {
+                              alert('Demo already given to this shop!');
+                              return;
+                            }
+                            
+                            await axios.post(`${API}/demos`, {
+                              contact_id: followup.contact_id
+                            });
+                            alert('Demo marked as given!');
+                            // Refresh activity logs
+                            if (window.refreshActivityLogs) {
+                              window.refreshActivityLogs();
+                            }
+                          } catch (error) {
+                            alert('Failed to mark demo as given');
+                          }
+                        }}
+                      >
+                        🎬
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -835,14 +887,44 @@ const DashboardView = ({ stats, followups }) => {
                       <p className="text-sm text-gray-600">Due: {format12Hour(followup.follow_up_date)}</p>
                       {followup.notes && <p className="text-sm text-gray-500 mt-1">{followup.notes}</p>}
                     </div>
-                    <a
-                      href={`tel:${getContactPhone(followup)}`}
-                      className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold ml-2"
-                      title="Call Now"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      📞 Call
-                    </a>
+                    <div className="flex gap-1 ml-2">
+                      <a
+                        href={`tel:${getContactPhone(followup)}`}
+                        className="px-2 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 text-xs font-semibold"
+                        title="Call Now"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        📞
+                      </a>
+                      <button
+                        className="px-2 py-1 bg-orange-600 text-white rounded-md hover:bg-orange-700 text-xs font-semibold"
+                        title="Mark Demo Given"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            // Check if demo already exists
+                            const demoResponse = await axios.get(`${API}/contacts/${followup.contact_id}/demos`);
+                            if (demoResponse.data.length > 0) {
+                              alert('Demo already given to this shop!');
+                              return;
+                            }
+                            
+                            await axios.post(`${API}/demos`, {
+                              contact_id: followup.contact_id
+                            });
+                            alert('Demo marked as given!');
+                            // Refresh activity logs
+                            if (window.refreshActivityLogs) {
+                              window.refreshActivityLogs();
+                            }
+                          } catch (error) {
+                            alert('Failed to mark demo as given');
+                          }
+                        }}
+                      >
+                        🎬
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -937,6 +1019,101 @@ const ContactsView = ({
 }) => {
   const statuses = ['None', 'Called', 'Not Attending', 'Follow-up', 'Interested', 'Not Interested', 'Irrelevant', 'Logged In'];
   const [selectedContacts, setSelectedContacts] = useState(new Set());
+  const [showColumnSettings, setShowColumnSettings] = useState(false);
+  const [draggedColumn, setDraggedColumn] = useState(null);
+  
+  // Default column configuration
+  const defaultColumns = [
+    { id: 'checkbox', label: 'Select', visible: true, width: 'min-w-[50px]', draggable: false },
+    { id: 'phone', label: 'Phone', visible: true, width: 'min-w-[120px]', draggable: true },
+    { id: 'phone2', label: 'Phone 2', visible: false, width: 'min-w-[120px]', draggable: true },
+    { id: 'shopName', label: 'Shop Name', visible: true, width: 'min-w-[150px]', draggable: true },
+    { id: 'address', label: 'Address', visible: true, width: 'min-w-[200px]', draggable: true },
+    { id: 'city', label: 'City', visible: true, width: 'min-w-[100px]', draggable: true },
+    { id: 'state', label: 'State', visible: true, width: 'min-w-[80px]', draggable: true },
+    { id: 'status', label: 'Status', visible: true, width: 'min-w-[120px]', draggable: true },
+    { id: 'category', label: 'Category', visible: true, width: 'min-w-[150px]', draggable: true },
+    { id: 'actions', label: 'Actions', visible: true, width: 'min-w-[100px]', draggable: false }
+  ];
+  
+  // Load column configuration from localStorage
+  const loadColumnConfig = () => {
+    try {
+      const saved = localStorage.getItem('contactTableColumns');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Ensure all default columns exist (for backward compatibility)
+        const merged = defaultColumns.map(defaultCol => {
+          const saved = parsed.find(col => col.id === defaultCol.id);
+          return saved ? { ...defaultCol, ...saved } : defaultCol;
+        });
+        return merged;
+      }
+    } catch (error) {
+      console.error('Error loading column config:', error);
+    }
+    return defaultColumns;
+  };
+  
+  const [columns, setColumns] = useState(loadColumnConfig);
+  
+  // Save column configuration to localStorage
+  const saveColumnConfig = (newColumns) => {
+    try {
+      localStorage.setItem('contactTableColumns', JSON.stringify(newColumns));
+    } catch (error) {
+      console.error('Error saving column config:', error);
+    }
+  };
+  
+  // Toggle column visibility
+  const toggleColumnVisibility = (columnId) => {
+    const newColumns = columns.map(col => 
+      col.id === columnId ? { ...col, visible: !col.visible } : col
+    );
+    setColumns(newColumns);
+    saveColumnConfig(newColumns);
+  };
+  
+  // Handle column drag start
+  const handleDragStart = (e, columnId) => {
+    setDraggedColumn(columnId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+  
+  // Handle column drag over
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+  
+  // Handle column drop
+  const handleDrop = (e, targetColumnId) => {
+    e.preventDefault();
+    if (!draggedColumn || draggedColumn === targetColumnId) return;
+    
+    const draggedIndex = columns.findIndex(col => col.id === draggedColumn);
+    const targetIndex = columns.findIndex(col => col.id === targetColumnId);
+    
+    if (draggedIndex === -1 || targetIndex === -1) return;
+    
+    const newColumns = [...columns];
+    const [draggedItem] = newColumns.splice(draggedIndex, 1);
+    newColumns.splice(targetIndex, 0, draggedItem);
+    
+    setColumns(newColumns);
+    saveColumnConfig(newColumns);
+    setDraggedColumn(null);
+  };
+  
+  // Reset columns to default
+  const resetColumns = () => {
+    setColumns(defaultColumns);
+    saveColumnConfig(defaultColumns);
+  };
+  
+  // Get visible columns
+  const visibleColumns = columns.filter(col => col.visible);
 
   const handleSelectAll = (checked) => {
     if (checked) {
@@ -1100,29 +1277,89 @@ const ContactsView = ({
 
       {/* Contacts Table */}
       <div className="bg-white rounded-xl shadow-md overflow-hidden">
+        {/* Column Settings Button */}
+        <div className="flex justify-end p-4 border-b">
+          <button
+            onClick={() => setShowColumnSettings(!showColumnSettings)}
+            className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition"
+          >
+            ⚙️ Column Settings
+          </button>
+        </div>
+        
+        {/* Column Settings Panel */}
+        {showColumnSettings && (
+          <div className="p-4 border-b bg-gray-50">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-gray-700">Customize Columns</h3>
+              <button
+                onClick={resetColumns}
+                className="text-xs text-indigo-600 hover:text-indigo-800"
+              >
+                Reset to Default
+              </button>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+              {columns.filter(col => col.draggable !== false).map(column => (
+                <label key={column.id} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={column.visible}
+                    onChange={() => toggleColumnVisibility(column.id)}
+                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                  />
+                  <span className={column.visible ? 'text-gray-900' : 'text-gray-500'}>
+                    {column.label}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              💡 Tip: Drag column headers to reorder them
+            </p>
+          </div>
+        )}
+        
         <div className="overflow-x-auto">
           <table className="w-full min-w-max">
             <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="px-6 py-3 text-left whitespace-nowrap min-w-[50px]">
-                  <input
-                    type="checkbox"
-                    checked={isAllSelected}
-                    ref={(el) => {
-                      if (el) el.indeterminate = isIndeterminate;
-                    }}
-                    onChange={(e) => handleSelectAll(e.target.checked)}
-                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                  />
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[120px]">Phone</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[150px]">Shop Name</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[200px]">Address</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[100px]">City</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[80px]">State</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[120px]">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[150px]">Category</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap min-w-[100px]">Actions</th>
+                {visibleColumns.map(column => {
+                  if (column.id === 'checkbox') {
+                    return (
+                      <th key={column.id} className={`px-6 py-3 text-left whitespace-nowrap ${column.width}`}>
+                        <input
+                          type="checkbox"
+                          checked={isAllSelected}
+                          ref={(el) => {
+                            if (el) el.indeterminate = isIndeterminate;
+                          }}
+                          onChange={(e) => handleSelectAll(e.target.checked)}
+                          className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                        />
+                      </th>
+                    );
+                  }
+                  
+                  return (
+                    <th
+                      key={column.id}
+                      className={`px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase whitespace-nowrap ${column.width} ${
+                        column.draggable ? 'cursor-move hover:bg-gray-100' : ''
+                      } ${draggedColumn === column.id ? 'opacity-50' : ''}`}
+                      draggable={column.draggable}
+                      onDragStart={(e) => column.draggable && handleDragStart(e, column.id)}
+                      onDragOver={handleDragOver}
+                      onDrop={(e) => handleDrop(e, column.id)}
+                      title={column.draggable ? 'Drag to reorder columns' : ''}
+                    >
+                      <div className="flex items-center gap-1">
+                        {column.draggable && <span className="text-gray-400">⋮⋮</span>}
+                        {column.label}
+                      </div>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
           <tbody className="divide-y divide-gray-200">
@@ -1132,116 +1369,209 @@ const ContactsView = ({
                 className={`hover:bg-gray-50 cursor-pointer ${selectedContacts.has(contact.id) ? 'bg-indigo-50' : ''}`}
                 onClick={() => onSelectContact(contact)}
               >
-                <td className="px-6 py-4 whitespace-nowrap min-w-[50px]">
-                  <input
-                    type="checkbox"
-                    checked={selectedContacts.has(contact.id)}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      handleSelectContact(contact.id, e.target.checked);
-                    }}
-                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                  />
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap min-w-[120px]">
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-900">{contact.phone}</span>
-                    <a
-                      href={`tel:${contact.phone}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onLogCall(contact.id);
-                      }}
-                      className="text-indigo-600 hover:text-indigo-800"
-                      title="Call"
-                    >
-                      📞
-                    </a>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-gray-700 min-w-[150px]">
-                  <div className="flex items-center justify-between">
-                    <span>{contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '-'}</span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const newShopName = prompt('Enter new shop name:', contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '');
-                        if (newShopName !== null && newShopName !== (contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '')) {
-                          onUpdate({
-                            ...contact,
-                            data: {
-                              ...contact.data,
-                              shop_name: newShopName
-                            }
-                          });
-                        }
-                      }}
-                      className="text-indigo-600 hover:text-indigo-800 text-sm ml-2"
-                      title="Edit Shop Name"
-                    >
-                      ✏️
-                    </button>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-gray-700 min-w-[200px]">
-                  {contact.data.address || contact.data.Address || contact.data['Address'] || '-'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-gray-700 min-w-[100px]">
-                  {contact.data.city || contact.data.City || contact.data['City'] || '-'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-gray-700 min-w-[80px]">
-                  {contact.data.state || contact.data.State || contact.data['State'] || '-'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap min-w-[120px]">
-                  <div className="relative">
-                    <select
-                      value={contact.status}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        onUpdateStatus(contact.id, e.target.value);
-                      }}
-                      className={`px-3 py-1 rounded-full text-sm border-0 font-medium focus:ring-2 focus:ring-indigo-500 ${
-                        contact.status === 'None' ? 'bg-gray-100 text-gray-700' :
-                        contact.status === 'Called' ? 'bg-blue-100 text-blue-800' :
-                        contact.status === 'Not Attending' ? 'bg-orange-100 text-orange-800' :
-                        contact.status === 'Follow-up' ? 'bg-yellow-100 text-yellow-800' :
-                        contact.status === 'Interested' ? 'bg-green-100 text-green-800' :
-                        contact.status === 'Not Interested' ? 'bg-red-100 text-red-800' :
-                        contact.status === 'Irrelevant' ? 'bg-purple-100 text-purple-800' :
-                        contact.status === 'Logged In' ? 'bg-teal-100 text-teal-800' :
-                        'bg-gray-100 text-gray-700'
-                      }`}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {statuses.map(status => (
-                        <option key={status} value={status}>{status}</option>
-                      ))}
-                    </select>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-gray-700 min-w-[150px]">
-                  {contact.data.category || contact.data.Category || contact.data['Category'] || '-'}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm min-w-[100px]">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectContact(contact);
-                    }}
-                    className="text-indigo-600 hover:text-indigo-800 mr-3"
-                  >
-                    View
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteContact(contact.id);
-                    }}
-                    className="text-red-600 hover:text-red-800"
-                  >
-                    Delete
-                  </button>
-                </td>
+                {visibleColumns.map(column => {
+                  const getCellContent = () => {
+                    switch (column.id) {
+                      case 'checkbox':
+                        return (
+                          <input
+                            type="checkbox"
+                            checked={selectedContacts.has(contact.id)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleSelectContact(contact.id, e.target.checked);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                          />
+                        );
+                      case 'phone':
+                        return (
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-900">{contact.phone}</span>
+                            <a
+                              href={`tel:${contact.phone}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onLogCall(contact.id, contact.phone);
+                              }}
+                              className="text-indigo-600 hover:text-indigo-800"
+                              title="Call"
+                            >
+                              📞
+                            </a>
+                          </div>
+                        );
+                      case 'phone2':
+                        const phone2 = contact.data.phone2 || contact.data.Phone2 || contact.data['Phone 2'] || contact.data.alternate_phone || contact.data.secondary_phone || '';
+                        return (
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center justify-between w-full">
+                              <span className="text-gray-900">{phone2 || '-'}</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const newPhone2 = prompt('Enter phone 2:', phone2);
+                                  if (newPhone2 !== null && newPhone2 !== phone2) {
+                                    onUpdate({
+                                      ...contact,
+                                      data: {
+                                        ...contact.data,
+                                        phone2: newPhone2
+                                      }
+                                    });
+                                  }
+                                }}
+                                className="text-indigo-600 hover:text-indigo-800 text-sm ml-2"
+                                title="Edit Phone 2"
+                              >
+                                ✏️
+                              </button>
+                            </div>
+                            {phone2 && (
+                              <a
+                                href={`tel:${phone2}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onLogCall(contact.id);
+                                }}
+                                className="text-indigo-600 hover:text-indigo-800"
+                                title="Call Phone 2"
+                              >
+                                📞
+                              </a>
+                            )}
+                          </div>
+                        );
+                      case 'shopName':
+                        return (
+                          <div className="flex items-center justify-between">
+                            <span>{contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '-'}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const newShopName = prompt('Enter new shop name:', contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '');
+                                if (newShopName !== null && newShopName !== (contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '')) {
+                                  onUpdate({
+                                    ...contact,
+                                    data: {
+                                      ...contact.data,
+                                      shop_name: newShopName
+                                    }
+                                  });
+                                }
+                              }}
+                              className="text-indigo-600 hover:text-indigo-800 text-sm ml-2"
+                              title="Edit Shop Name"
+                            >
+                              ✏️
+                            </button>
+                          </div>
+                        );
+                      case 'address':
+                        return (
+                          <span className="text-gray-700">
+                            {contact.data.address || contact.data.Address || contact.data['Street Address'] || '-'}
+                          </span>
+                        );
+                      case 'city':
+                        return (
+                          <span className="text-gray-700">
+                            {contact.data.city || contact.data.City || '-'}
+                          </span>
+                        );
+                      case 'state':
+                        return (
+                          <span className="text-gray-700">
+                            {contact.data.state || contact.data.State || '-'}
+                          </span>
+                        );
+                      case 'status':
+                        return (
+                          <div className="relative">
+                            <select
+                              value={contact.status}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                onUpdateStatus(contact.id, e.target.value);
+                              }}
+                              className={`px-3 py-1 rounded-full text-sm border-0 font-medium focus:ring-2 focus:ring-indigo-500 ${
+                                contact.status === 'None' ? 'bg-gray-100 text-gray-700' :
+                                contact.status === 'Called' ? 'bg-blue-100 text-blue-800' :
+                                contact.status === 'Not Attending' ? 'bg-orange-100 text-orange-800' :
+                                contact.status === 'Follow-up' ? 'bg-yellow-100 text-yellow-800' :
+                                contact.status === 'Interested' ? 'bg-green-100 text-green-800' :
+                                contact.status === 'Not Interested' ? 'bg-red-100 text-red-800' :
+                                contact.status === 'Irrelevant' ? 'bg-purple-100 text-purple-800' :
+                                contact.status === 'Logged In' ? 'bg-teal-100 text-teal-800' :
+                                'bg-gray-100 text-gray-700'
+                              }`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {statuses.map(status => (
+                                <option key={status} value={status}>{status}</option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      case 'category':
+                        return (
+                          <span className="text-gray-700">
+                            {contact.data.category || contact.data.Category || contact.data['Business Category'] || '-'}
+                          </span>
+                        );
+                      case 'actions':
+                        return (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (window.scheduleMeetingFromContact) {
+                                  window.scheduleMeetingFromContact(contact);
+                                } else {
+                                  console.error('scheduleMeetingFromContact function not available');
+                                }
+                              }}
+                              className="text-indigo-600 hover:text-indigo-800 text-sm"
+                              title="Schedule Meeting"
+                            >
+                              📅
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onSelectContact(contact);
+                              }}
+                              className="text-indigo-600 hover:text-indigo-800 text-sm"
+                              title="View Details"
+                            >
+                              👁️
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`Are you sure you want to delete ${contact.data.shop_name || contact.phone}?`)) {
+                                  onDeleteContact(contact.id);
+                                }
+                              }}
+                              className="text-red-600 hover:text-red-800 text-sm"
+                              title="Delete Contact"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        );
+                      default:
+                        return null;
+                    }
+                  };
+                  
+                  return (
+                    <td key={column.id} className={`px-6 py-4 whitespace-nowrap ${column.width}`}>
+                      {getCellContent()}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
@@ -1943,6 +2273,11 @@ const MeetingsView = ({ contacts, globalMeetings = [] }) => {
         window.refreshMeetings();
       }
       
+      // Refresh activity logs
+      if (window.refreshActivityLogs) {
+        window.refreshActivityLogs();
+      }
+      
       alert(`Meeting ${status} successfully!`);
     } catch (error) {
       console.error('Failed to update meeting status:', error);
@@ -1962,6 +2297,11 @@ const MeetingsView = ({ contacts, globalMeetings = [] }) => {
       // Refresh meetings by calling parent's fetchMeetings
       if (window.refreshMeetings) {
         window.refreshMeetings();
+      }
+      
+      // Refresh activity logs
+      if (window.refreshActivityLogs) {
+        window.refreshActivityLogs();
       }
       
       alert('Meeting deleted successfully!');
@@ -1990,6 +2330,11 @@ const MeetingsView = ({ contacts, globalMeetings = [] }) => {
       // Refresh meetings
       if (window.refreshMeetings) {
         window.refreshMeetings();
+      }
+      
+      // Refresh activity logs
+      if (window.refreshActivityLogs) {
+        window.refreshActivityLogs();
       }
       
       setShowRescheduleModal(false);
@@ -2903,6 +3248,175 @@ const ImportView = ({ onImportComplete }) => {
   );
 };
 
+// Demo Reports View
+const DemoReportsView = () => {
+  const [dateRange, setDateRange] = useState({
+    start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days ago
+    end: new Date().toISOString().split('T')[0] // today
+  });
+  const [groupBy, setGroupBy] = useState('day');
+  const [reportData, setReportData] = useState([]);
+  const [summary, setSummary] = useState({ given: 0, watched: 0, conversion: 0 });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetchReportData();
+  }, [dateRange, groupBy]);
+
+  const fetchReportData = async () => {
+    setLoading(true);
+    try {
+      const startDate = new Date(dateRange.start).toISOString();
+      const endDate = new Date(dateRange.end + 'T23:59:59').toISOString();
+      
+      const [reportResponse, summaryResponse] = await Promise.all([
+        axios.get(`${API}/demos/report?start=${startDate}&end=${endDate}&group_by=${groupBy}`),
+        axios.get(`${API}/demos/summary?start=${startDate}&end=${endDate}`)
+      ]);
+      
+      setReportData(reportResponse.data);
+      setSummary(summaryResponse.data);
+    } catch (error) {
+      console.error('Failed to fetch demo report:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const setQuickRange = (days) => {
+    const end = new Date().toISOString().split('T')[0];
+    const start = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    setDateRange({ start, end });
+  };
+
+  return (
+    <div>
+      <h2 className="text-3xl font-bold text-gray-800 mb-6">🎬 Demo Reports</h2>
+      
+      {/* Quick Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
+          <h3 className="text-gray-600 text-sm font-medium mb-2">Demos Given</h3>
+          <p className="text-4xl font-bold text-gray-800">{summary.given}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-green-500">
+          <h3 className="text-gray-600 text-sm font-medium mb-2">Demos Watched</h3>
+          <p className="text-4xl font-bold text-gray-800">{summary.watched}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
+          <h3 className="text-gray-600 text-sm font-medium mb-2">Conversion Rate</h3>
+          <p className="text-4xl font-bold text-gray-800">{(summary.conversion * 100).toFixed(1)}%</p>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-xl shadow-md p-6 mb-8">
+        <div className="flex flex-wrap gap-4 items-end">
+          <div className="flex gap-2">
+            <button onClick={() => setQuickRange(7)} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">Last 7 days</button>
+            <button onClick={() => setQuickRange(30)} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">Last 30 days</button>
+            <button onClick={() => setQuickRange(90)} className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm">Last 90 days</button>
+          </div>
+          
+          <div className="flex gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+              <input
+                type="date"
+                value={dateRange.start}
+                onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                className="px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+              <input
+                type="date"
+                value={dateRange.end}
+                onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                className="px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Group By</label>
+              <select
+                value={groupBy}
+                onChange={(e) => setGroupBy(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg"
+              >
+                <option value="day">Daily</option>
+                <option value="week">Weekly</option>
+                <option value="month">Monthly</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Report Table */}
+      <div className="bg-white rounded-xl shadow-md overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-800">Demo Activity Report</h3>
+        </div>
+        
+        {loading ? (
+          <div className="p-8 text-center">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+            <p className="mt-2 text-gray-600">Loading report data...</p>
+          </div>
+        ) : reportData.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">
+            <p>No demo data found for the selected date range.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Period</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Demos Given</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Demos Watched</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Conversion Rate</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {reportData.map((row, index) => (
+                  <tr key={index} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{row.period}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                        {row.given}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        {row.watched}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <div className="flex items-center justify-center">
+                        <div className="flex-1 bg-gray-200 rounded-full h-2 mr-2 max-w-20">
+                          <div 
+                            className="bg-blue-600 h-2 rounded-full" 
+                            style={{ width: `${Math.min(row.conversion * 100, 100)}%` }}
+                          ></div>
+                        </div>
+                        <span className="text-sm font-medium text-gray-900">
+                          {(row.conversion * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // Activity Log View
 const ActivityLogView = ({ logs, onLoadMore, hasMore, loading, contacts = [] }) => {
   // Add infinite scroll functionality
@@ -2965,31 +3479,88 @@ const ActivityLogView = ({ logs, onLoadMore, hasMore, loading, contacts = [] }) 
         return '📅 Follow-up Scheduled';
       case 'Completed follow-up':
         return '✅ Follow-up Completed';
-      case 'Logged call':
+      case 'Called contact':
         return '📞 Call Logged';
       case 'Added note':
         return '📝 Note Added';
       case 'Imported contacts':
         return '📤 Contacts Imported';
+      case 'Created meeting':
+        return '📅 Meeting Scheduled';
+      case 'Rescheduled meeting':
+        return '📅 Meeting Rescheduled';
+      case 'Completed meeting':
+        return '✅ Meeting Completed';
+      case 'Cancelled meeting':
+        return '❌ Meeting Cancelled';
+      case 'Deleted meeting':
+        return '🗑️ Meeting Deleted';
+      case 'Updated meeting':
+        return '✏️ Meeting Updated';
       default:
+        // Handle dynamic meeting status updates
+        if (log.action.startsWith('Updated meeting status to')) {
+          const status = log.action.replace('Updated meeting status to ', '');
+          if (status === 'completed') return '✅ Meeting Completed';
+          if (status === 'cancelled') return '❌ Meeting Cancelled';
+          return '📝 Meeting Status Updated';
+        }
         return log.action;
     }
   };
 
   // Helper function to get contact from log (reused by both shop name and phone functions)
   const getContactFromLog = (log) => {
-    if (!log.target || !contacts.length) return null;
+    if (!contacts.length) return null;
     
     // If target is a phone number, find contact directly
-    if (log.target.startsWith('+91') || /^\+?\d+/.test(log.target)) {
+    if (log.target && (log.target.startsWith('+91') || /^\+?\d+/.test(log.target))) {
       return contacts.find(c => c.phone === log.target);
     }
     
     // If target looks like a contact ID (UUID), find contact by various ID fields
-    if (log.target.length === 36 && log.target.includes('-')) {
+    if (log.target && log.target.length === 36 && log.target.includes('-')) {
       return contacts.find(c => c.id === log.target) || 
              contacts.find(c => c.contact_id === log.target) ||
              contacts.find(c => c._id === log.target);
+    }
+    
+    // For contact operations, try to find contact by matching target with phone or shop name
+    if (log.action && (log.action.includes('Contact') || log.action.includes('contact'))) {
+      if (log.target) {
+        // Try to find by phone number (target might be phone without country code)
+        let foundContact = contacts.find(c => c.phone === log.target || c.phone === `+91${log.target}`);
+        if (foundContact) return foundContact;
+        
+        // Try to find by shop name
+        foundContact = contacts.find(c => 
+          (c.data.shop_name && c.data.shop_name === log.target) ||
+          (c.data.Shop_Name && c.data.Shop_Name === log.target) ||
+          (c.data['Shop Name'] && c.data['Shop Name'] === log.target)
+        );
+        if (foundContact) return foundContact;
+      }
+      
+      // If we have details, try to extract information from there
+      if (log.details) {
+        const phoneMatch = log.details.match(/\+91\d{10}|\d{10}/);
+        if (phoneMatch) {
+          const phone = phoneMatch[0].startsWith('+91') ? phoneMatch[0] : `+91${phoneMatch[0]}`;
+          const foundContact = contacts.find(c => c.phone === phone);
+          if (foundContact) return foundContact;
+        }
+      }
+    }
+    
+    // For meeting-related actions, try to find contact from meeting details
+    if (log.action && log.action.toLowerCase().includes('meeting') && log.details) {
+      // Try to extract contact information from details
+      // Look for meeting details that might contain attendee information
+      const phoneMatch = log.details.match(/\+91\d{10}|\d{10}/);
+      if (phoneMatch) {
+        const phone = phoneMatch[0].startsWith('+91') ? phoneMatch[0] : `+91${phoneMatch[0]}`;
+        return contacts.find(c => c.phone === phone);
+      }
     }
     
     return null;
@@ -3002,6 +3573,62 @@ const ActivityLogView = ({ logs, onLoadMore, hasMore, loading, contacts = [] }) 
       const shopName = contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'];
       return shopName || 'No Shop Name';
     }
+    
+    // For deleted contacts, extract shop name from log details
+    if (log.action === 'Deleted contact' && log.details) {
+      console.log('Checking deleted contact log details:', log.details);
+      const shopMatch = log.details.match(/Shop: ([^,]+)/);
+      if (shopMatch && shopMatch[1] && shopMatch[1] !== 'Unknown Shop') {
+        console.log('Found shop name from deleted contact details:', shopMatch[1]);
+        return shopMatch[1];
+      }
+    }
+    
+    // For other contact operations, extract from details if available
+    if (log.action && (log.action.includes('Contact') || log.action.includes('contact')) && log.details) {
+      console.log('Checking contact operation log details:', log.details);
+      const shopMatch = log.details.match(/Shop: ([^,]+)/);
+      if (shopMatch && shopMatch[1] && shopMatch[1] !== 'Unknown Shop') {
+        console.log('Found shop name from contact operation details:', shopMatch[1]);
+        return shopMatch[1];
+      }
+    }
+    
+    // For contact operations, if target looks like a shop name, return it
+    if (log.action && (log.action.includes('Contact') || log.action.includes('contact')) && log.target) {
+      // If target doesn't look like a phone number or UUID, it might be a shop name or identifier
+      if (!log.target.startsWith('+91') && !/^\+?\d+$/.test(log.target) && 
+          !(log.target.length === 36 && log.target.includes('-'))) {
+        // If it looks like meaningful text (not just random characters), return it as shop name
+        if (log.target.length > 2) {
+          return log.target;
+        }
+      }
+      
+      // Last resort: if we can't find a contact but have a target, try to find any contact with matching phone
+      const foundContact = contacts.find(c => 
+        c.phone && (c.phone === log.target || c.phone.includes(log.target) || log.target.includes(c.phone))
+      );
+      if (foundContact && foundContact.data) {
+        const shopName = foundContact.data.shop_name || foundContact.data.Shop_Name || foundContact.data['Shop Name'];
+        if (shopName) return shopName;
+      }
+    }
+    
+    // For meeting actions, try to show something more meaningful than N/A
+    if (log.action && log.action.toLowerCase().includes('meeting')) {
+      return 'Meeting Contact';
+    }
+    
+    // Final fallback: if this is a contact operation and target doesn't look like a phone or UUID, use it as shop name
+    if (log.action && (log.action.includes('Contact') || log.action.includes('contact')) && log.target) {
+      // If target doesn't look like a phone number (+91xxxxxxxxxx or just digits) or UUID
+      if (!log.target.match(/^\+?\d+$/) && !(log.target.length === 36 && log.target.includes('-'))) {
+        console.log('Using target as shop name fallback:', log.target);
+        return log.target;
+      }
+    }
+    
     return 'N/A';
   };
 
@@ -3025,6 +3652,24 @@ const ActivityLogView = ({ logs, onLoadMore, hasMore, loading, contacts = [] }) 
         }
         return `📋 Follow-up`;
       }
+      
+      // For meeting actions, try to extract contact phone from the contact found
+      if (log.action && log.action.toLowerCase().includes('meeting')) {
+        const contact = getContactFromLog(log);
+        if (contact && contact.phone) {
+          return `📱 ${contact.phone}`;
+        }
+        // If we have attendee info in details, try to extract phone
+        if (log.details) {
+          const phoneMatch = log.details.match(/\+91\d{10}|\d{10}/);
+          if (phoneMatch) {
+            const phone = phoneMatch[0].startsWith('+91') ? phoneMatch[0] : `+91${phoneMatch[0]}`;
+            return `📱 ${phone}`;
+          }
+        }
+        return `📅 ${log.target}`;
+      }
+      
       return log.target;
     }
     return 'N/A';
@@ -3198,8 +3843,10 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
   const [followUpDate, setFollowUpDate] = useState('');
   const [followUpNotes, setFollowUpNotes] = useState('');
   const [isEditing, setIsEditing] = useState(false);
+  const [demos, setDemos] = useState([]);
   const [editedContact, setEditedContact] = useState({
     phone: contact.phone,
+    phone2: contact.data.phone2 || contact.data.Phone2 || contact.data['Phone 2'] || contact.data.alternate_phone || contact.data.secondary_phone || '',
     shop_name: contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '',
     address: contact.data.address || contact.data.Address || contact.data['Address'] || '',
     city: contact.data.city || contact.data.City || contact.data['City'] || '',
@@ -3209,6 +3856,7 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
 
   useEffect(() => {
     fetchNotes();
+    fetchDemos();
   }, [contact.id]);
 
   const fetchNotes = async () => {
@@ -3217,6 +3865,48 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
       setNotes(response.data);
     } catch (error) {
       console.error('Failed to fetch notes:', error);
+    }
+  };
+
+  const fetchDemos = async () => {
+    try {
+      const response = await axios.get(`${API}/contacts/${contact.id}/demos`);
+      setDemos(response.data);
+    } catch (error) {
+      console.error('Failed to fetch demos:', error);
+    }
+  };
+
+  const handleMarkDemoGiven = async () => {
+    try {
+      await axios.post(`${API}/demos`, {
+        contact_id: contact.id
+      });
+      await fetchDemos();
+      
+      // Refresh activity logs for live updates
+      if (window.refreshActivityLogs) {
+        window.refreshActivityLogs();
+      }
+    } catch (error) {
+      alert('Failed to mark demo as given');
+    }
+  };
+
+  const handleMarkDemoWatched = async (demoId) => {
+    try {
+      await axios.put(`${API}/demos/${demoId}/watched`, {
+        watched_at: new Date().toISOString()
+      });
+      await fetchDemos();
+      
+      // Refresh activity logs for live updates
+      if (window.refreshActivityLogs) {
+        window.refreshActivityLogs();
+      }
+    } catch (error) {
+      console.error('Demo watched error:', error);
+      alert('Failed to mark demo as watched');
     }
   };
 
@@ -3293,6 +3983,7 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
       const updates = {
         phone: editedContact.phone,
         data: {
+          phone2: editedContact.phone2 || undefined,
           shop_name: editedContact.shop_name || undefined,
           address: editedContact.address || undefined,
           city: editedContact.city || undefined,
@@ -3312,6 +4003,7 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
   const handleCancelEdit = () => {
     setEditedContact({
       phone: contact.phone,
+      phone2: contact.data.phone2 || contact.data.Phone2 || contact.data['Phone 2'] || contact.data.alternate_phone || contact.data.secondary_phone || '',
       shop_name: contact.data.shop_name || contact.data.Shop_Name || contact.data['Shop Name'] || '',
       address: contact.data.address || contact.data.Address || contact.data['Address'] || '',
       city: contact.data.city || contact.data.City || contact.data['City'] || '',
@@ -3374,7 +4066,43 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
                     placeholder="Phone number"
                   />
                 ) : (
-                  <p className="font-medium">{contact.phone}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{contact.phone}</p>
+                    <a
+                      href={`tel:${contact.phone}`}
+                      onClick={() => onLogCall(contact.id)}
+                      className="text-indigo-600 hover:text-indigo-800"
+                      title="Call"
+                    >
+                      📞
+                    </a>
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="text-sm text-gray-600">Phone 2</label>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={editedContact.phone2}
+                    onChange={(e) => setEditedContact({ ...editedContact, phone2: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1 font-medium"
+                    placeholder="Secondary phone number"
+                  />
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{contact.data.phone2 || contact.data.Phone2 || contact.data['Phone 2'] || contact.data.alternate_phone || contact.data.secondary_phone || '-'}</p>
+                    {(contact.data.phone2 || contact.data.Phone2 || contact.data['Phone 2'] || contact.data.alternate_phone || contact.data.secondary_phone) && (
+                      <a
+                        href={`tel:${contact.data.phone2 || contact.data.Phone2 || contact.data['Phone 2'] || contact.data.alternate_phone || contact.data.secondary_phone}`}
+                        onClick={() => onLogCall(contact.id)}
+                        className="text-indigo-600 hover:text-indigo-800"
+                        title="Call Phone 2"
+                      >
+                        📞
+                      </a>
+                    )}
+                  </div>
                 )}
               </div>
               <div>
@@ -3482,7 +4210,14 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
             <div className="mt-4 flex gap-2">
               <a
                 href={`tel:${contact.phone}`}
-                onClick={() => onLogCall()}
+                onClick={() => {
+                  // Wait for 1 second to show the confirmation (giving time for the call to be initiated)
+                  setTimeout(async () => {
+                    if (window.confirm('Did you complete the call?')) {
+                      onLogCall(contact.id, contact.phone);
+                    }
+                  }, 1000);
+                }}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
               >
                 📞 Call Now
@@ -3536,6 +4271,57 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
                 Add
               </button>
             </div>
+          </div>
+
+          {/* Demo Section */}
+          <div className="bg-gray-50 rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-700">🎬 Demo Status</h3>
+              {demos.length === 0 ? (
+                <button
+                  onClick={handleMarkDemoGiven}
+                  className="px-3 py-1 bg-orange-600 text-white text-sm rounded-md hover:bg-orange-700"
+                >
+                  Mark Given
+                </button>
+              ) : (
+                <span className="px-3 py-1 bg-gray-300 text-gray-600 text-sm rounded-md cursor-not-allowed">
+                  Demo Given
+                </span>
+              )}
+            </div>
+            
+            {demos.length > 0 && (
+              <div className="space-y-2">
+                {demos.slice(0, 1).map(demo => (
+                  <div key={demo.id} className={`p-2 rounded text-xs ${demo.watched ? 'bg-green-50 border border-green-200' : 'bg-orange-50 border border-orange-200'}`}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className={`font-medium ${demo.watched ? 'text-green-700' : 'text-orange-700'}`}>
+                          {demo.watched ? '✅ Demo Completed' : '📤 Demo Given - Pending Watch'}
+                        </div>
+                        <div className="text-gray-600 mt-1">
+                          Given: {format12Hour(demo.given_at)}
+                        </div>
+                        {demo.watched && demo.watched_at && (
+                          <div className="text-gray-600">
+                            Watched: {format12Hour(demo.watched_at)}
+                          </div>
+                        )}
+                      </div>
+                      {!demo.watched && (
+                        <button
+                          onClick={() => handleMarkDemoWatched(demo.id)}
+                          className="px-2 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600"
+                        >
+                          Mark Watched
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Follow-up Section */}

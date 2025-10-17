@@ -138,6 +138,26 @@ class ActivityLog(BaseModel):
     details: Optional[str] = None
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+class Demo(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    contact_id: str
+    user_id: str
+    user_email: str
+    given_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    watched: bool = False
+    watched_at: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class DemoCreate(BaseModel):
+    contact_id: str
+    notes: Optional[str] = None
+
+class DemoWatchUpdate(BaseModel):
+    watched_at: Optional[str] = None
+
 # ============ HELPER FUNCTIONS ============
 
 def hash_password(password: str) -> str:
@@ -481,11 +501,24 @@ async def create_contact(
     contact = Contact(**contact_data.model_dump())
     await db.contacts.insert_one(contact.model_dump())
     
+    # Get shop name for logging
+    contact_data = contact.data if hasattr(contact, 'data') else {}
+    shop_name = (
+        contact_data.get('shop_name') or 
+        contact_data.get('Shop_Name') or 
+        contact_data.get('Shop Name') or
+        contact_data.get('shop') or
+        contact_data.get('Shop') or
+        'Unknown Shop'
+    )
+    print(f"Contact creation - Phone: {contact.phone}, Shop name: {shop_name}, Contact data keys: {list(contact_data.keys())}")
+    
     await log_activity(
         current_user['id'],
         current_user['email'],
         "Created contact",
-        target=contact.phone
+        target=contact.phone,
+        details=f"Shop: {shop_name}, Phone: {contact.phone}"
     )
     
     return contact
@@ -515,12 +548,21 @@ async def update_contact(
     
     await db.contacts.update_one({"id": contact_id}, {"$set": update_data})
     
+    # Get shop name for logging (check both original and updated data)
+    shop_name = (
+        update_data.get('data', {}).get('shop_name') or 
+        contact.get('data', {}).get('shop_name') or 
+        contact.get('data', {}).get('Shop_Name') or 
+        contact.get('data', {}).get('Shop Name') or 
+        'Unknown Shop'
+    )
+    
     await log_activity(
         current_user['id'],
         current_user['email'],
         "Updated contact",
         target=contact['phone'],
-        details=f"Fields: {', '.join(update_data.keys())}"
+        details=f"Shop: {shop_name}, Fields: {', '.join(update_data.keys())}"
     )
     
     updated_contact = await db.contacts.find_one({"id": contact_id}, {"_id": 0})
@@ -535,13 +577,28 @@ async def delete_contact(
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
     
+    # Get shop name before deletion for logging
+    contact_data = contact.get('data', {})
+    shop_name = (
+        contact_data.get('shop_name') or 
+        contact_data.get('Shop_Name') or 
+        contact_data.get('Shop Name') or
+        contact_data.get('shop') or
+        contact_data.get('Shop') or
+        contact.get('shop_name') or  # In case it's directly on contact
+        contact.get('Shop_Name') or
+        'Unknown Shop'
+    )
+    print(f"Contact deletion - Phone: {contact.get('phone')}, Shop name: {shop_name}, Contact data keys: {list(contact_data.keys())}")
+    
     await db.contacts.delete_one({"id": contact_id})
     
     await log_activity(
         current_user['id'],
         current_user['email'],
         "Deleted contact",
-        target=contact['phone']
+        target=contact['phone'],
+        details=f"Shop: {shop_name}, Phone: {contact['phone']}"
     )
     
     return {"message": "Contact deleted successfully"}
@@ -824,12 +881,33 @@ async def create_meeting(
     )
     await db.meetings.insert_one(meeting.model_dump())
     
+    # Get contact details for proper logging
+    target_contact = None
+    if meeting.attendees and len(meeting.attendees) > 0:
+        # Find the first attendee's contact for logging
+        first_attendee = meeting.attendees[0]
+        if 'phone' in first_attendee:
+            target_contact = await db.contacts.find_one({"phone": first_attendee['phone']}, {"_id": 0})
+    
+    # Use contact phone as target, fallback to meeting title
+    log_target = target_contact['phone'] if target_contact else meeting.title
+    
+    # Create detailed attendee info for better logging
+    attendee_info = []
+    for attendee in meeting.attendees:
+        if 'phone' in attendee:
+            attendee_info.append(f"{attendee.get('name', 'Unknown')} ({attendee['phone']})")
+        else:
+            attendee_info.append(attendee.get('name', 'Unknown'))
+    
+    attendee_details = ", ".join(attendee_info) if attendee_info else "No attendees"
+    
     await log_activity(
         current_user['id'],
         current_user['email'],
         "Created meeting",
-        target=meeting.title,
-        details=f"Scheduled for {meeting.date} {meeting.time or ''} with {len(meeting.attendees)} attendees"
+        target=log_target,
+        details=f"Meeting: {meeting.title}, Date: {meeting.date} {meeting.time or ''}, Attendees: {attendee_details}"
     )
     
     return meeting
@@ -888,18 +966,46 @@ async def update_meeting(
     
     await db.meetings.update_one({"id": meeting_id}, {"$set": update_data})
     
+    # Get contact details for proper logging
+    target_contact = None
+    if meeting.get('attendees') and len(meeting['attendees']) > 0:
+        first_attendee = meeting['attendees'][0]
+        if 'phone' in first_attendee:
+            target_contact = await db.contacts.find_one({"phone": first_attendee['phone']}, {"_id": 0})
+    
+    # Use contact phone as target, fallback to meeting title
+    log_target = target_contact['phone'] if target_contact else meeting['title']
+    
+    # Create detailed attendee info for better logging
+    attendee_info = []
+    if meeting.get('attendees'):
+        for attendee in meeting['attendees']:
+            if 'phone' in attendee:
+                attendee_info.append(f"{attendee.get('name', 'Unknown')} ({attendee['phone']})")
+            else:
+                attendee_info.append(attendee.get('name', 'Unknown'))
+    
+    attendee_details = ", ".join(attendee_info) if attendee_info else "No attendees"
+    
     # Determine action for logging
     action = "Updated meeting"
+    details = f"Meeting: {meeting['title']}, Attendees: {attendee_details}"
+    
     if "date" in update_data or "time" in update_data:
         action = "Rescheduled meeting"
+        old_datetime = f"{meeting.get('date', '')} {meeting.get('time', '')}"
+        new_datetime = f"{update_data.get('date', meeting.get('date', ''))} {update_data.get('time', meeting.get('time', ''))}"
+        details = f"Meeting: {meeting['title']}, From: {old_datetime.strip()}, To: {new_datetime.strip()}, Attendees: {attendee_details}"
     elif "status" in update_data:
         action = f"Updated meeting status to {update_data['status']}"
+        details = f"Meeting: {meeting['title']}, Status: {update_data['status']}, Attendees: {attendee_details}"
     
     await log_activity(
         current_user['id'],
         current_user['email'],
         action,
-        target=meeting['title']
+        target=log_target,
+        details=details
     )
     
     return {"message": "Meeting updated successfully"}
@@ -919,11 +1025,41 @@ async def update_meeting_status(
     
     await db.meetings.update_one({"id": meeting_id}, {"$set": {"status": status_update.status}})
     
+    # Get contact details for proper logging
+    target_contact = None
+    if meeting.get('attendees') and len(meeting['attendees']) > 0:
+        first_attendee = meeting['attendees'][0]
+        if 'phone' in first_attendee:
+            target_contact = await db.contacts.find_one({"phone": first_attendee['phone']}, {"_id": 0})
+    
+    # Use contact phone as target, fallback to meeting title
+    log_target = target_contact['phone'] if target_contact else meeting['title']
+    
+    # Determine action based on status
+    if status_update.status == "completed":
+        action = "Completed meeting"
+    elif status_update.status == "cancelled":
+        action = "Cancelled meeting"
+    else:
+        action = f"Updated meeting status to {status_update.status}"
+    
+    # Create detailed attendee info for better logging
+    attendee_info = []
+    if meeting.get('attendees'):
+        for attendee in meeting['attendees']:
+            if 'phone' in attendee:
+                attendee_info.append(f"{attendee.get('name', 'Unknown')} ({attendee['phone']})")
+            else:
+                attendee_info.append(attendee.get('name', 'Unknown'))
+    
+    attendee_details = ", ".join(attendee_info) if attendee_info else "No attendees"
+    
     await log_activity(
         current_user['id'],
         current_user['email'],
-        f"Updated meeting status to {status_update.status}",
-        target=meeting['title']
+        action,
+        target=log_target,
+        details=f"Meeting: {meeting['title']}, Date: {meeting.get('date', '')} {meeting.get('time', '')}, Attendees: {attendee_details}"
     )
     
     return {"message": f"Meeting status updated to {status_update.status}"}
@@ -937,16 +1073,273 @@ async def delete_meeting(
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
     
+    # Get contact details for proper logging before deletion
+    target_contact = None
+    if meeting.get('attendees') and len(meeting['attendees']) > 0:
+        first_attendee = meeting['attendees'][0]
+        if 'phone' in first_attendee:
+            target_contact = await db.contacts.find_one({"phone": first_attendee['phone']}, {"_id": 0})
+    
+    # Use contact phone as target, fallback to meeting title
+    log_target = target_contact['phone'] if target_contact else meeting['title']
+    
     await db.meetings.delete_one({"id": meeting_id})
+    
+    # Create detailed attendee info for better logging
+    attendee_info = []
+    if meeting.get('attendees'):
+        for attendee in meeting['attendees']:
+            if 'phone' in attendee:
+                attendee_info.append(f"{attendee.get('name', 'Unknown')} ({attendee['phone']})")
+            else:
+                attendee_info.append(attendee.get('name', 'Unknown'))
+    
+    attendee_details = ", ".join(attendee_info) if attendee_info else "No attendees"
     
     await log_activity(
         current_user['id'],
         current_user['email'],
         "Deleted meeting",
-        target=meeting['title']
+        target=log_target,
+        details=f"Meeting: {meeting['title']}, Date: {meeting.get('date', '')} {meeting.get('time', '')}, Attendees: {attendee_details}"
     )
     
     return {"message": "Meeting deleted successfully"}
+
+# ============ DEMO ROUTES ============
+
+@api_router.post("/demos", response_model=Demo)
+async def create_demo(
+    demo_data: DemoCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Mark a demo as given"""
+    contact = await db.contacts.find_one({"id": demo_data.contact_id}, {"_id": 0})
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    
+    demo = Demo(
+        user_id=current_user['id'],
+        user_email=current_user['email'],
+        **demo_data.model_dump()
+    )
+    
+    await db.demos.insert_one(demo.model_dump())
+    
+    # Get shop name for logging
+    contact_data = contact.get('data', {})
+    shop_name = (
+        contact_data.get('shop_name') or 
+        contact_data.get('Shop_Name') or 
+        contact_data.get('Shop Name') or
+        'Unknown Shop'
+    )
+    
+    await log_activity(
+        current_user['id'],
+        current_user['email'],
+        "Demo given",
+        target=contact['phone'],
+        details=f"Shop: {shop_name}, Given at: {demo.given_at}"
+    )
+    
+    return demo
+
+@api_router.put("/demos/{demo_id}/watched")
+async def mark_demo_watched(
+    demo_id: str,
+    watch_data: DemoWatchUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Mark a demo as watched/checked"""
+    demo = await db.demos.find_one({"id": demo_id}, {"_id": 0})
+    if not demo:
+        raise HTTPException(status_code=404, detail="Demo not found")
+    
+    if demo['user_id'] != current_user['id']:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    watched_at = watch_data.watched_at or datetime.now(timezone.utc).isoformat()
+    
+    await db.demos.update_one(
+        {"id": demo_id},
+        {
+            "$set": {
+                "watched": True,
+                "watched_at": watched_at,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+        }
+    )
+    
+    # Get contact for logging
+    contact = await db.contacts.find_one({"id": demo['contact_id']}, {"_id": 0})
+    if contact:
+        contact_data = contact.get('data', {})
+        shop_name = (
+            contact_data.get('shop_name') or 
+            contact_data.get('Shop_Name') or 
+            contact_data.get('Shop Name') or
+            'Unknown Shop'
+        )
+        
+        await log_activity(
+            current_user['id'],
+            current_user['email'],
+            "Demo watched",
+            target=contact['phone'],
+            details=f"Shop: {shop_name}, Watched at: {watched_at}"
+        )
+    
+    return {"message": "Demo marked as watched", "watched_at": watched_at}
+
+@api_router.get("/contacts/{contact_id}/demos", response_model=List[Demo])
+async def get_contact_demos(
+    contact_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get demo history for a contact"""
+    demos = await db.demos.find(
+        {"contact_id": contact_id}, 
+        {"_id": 0}
+    ).sort("given_at", -1).to_list(None)
+    
+    return demos
+
+@api_router.get("/demos/report")
+async def get_demo_report(
+    start: str,
+    end: str,
+    group_by: str = "day",  # day, week, month
+    current_user: dict = Depends(get_current_user)
+):
+    """Get demo statistics grouped by time period"""
+    try:
+        start_date = datetime.fromisoformat(start.replace('Z', '+00:00'))
+        end_date = datetime.fromisoformat(end.replace('Z', '+00:00'))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format")
+    
+    # MongoDB aggregation pipeline
+    if group_by == "day":
+        date_format = "%Y-%m-%d"
+    elif group_by == "week":
+        date_format = "%Y-%U"  # Year-Week
+    elif group_by == "month":
+        date_format = "%Y-%m"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid group_by parameter")
+    
+    pipeline = [
+        {
+            "$match": {
+                "given_at": {
+                    "$gte": start_date.isoformat(),
+                    "$lte": end_date.isoformat()
+                }
+            }
+        },
+        {
+            "$group": {
+                "_id": {
+                    "$dateToString": {
+                        "format": date_format,
+                        "date": {"$dateFromString": {"dateString": "$given_at"}}
+                    }
+                },
+                "given": {"$sum": 1},
+                "watched": {
+                    "$sum": {
+                        "$cond": [{"$eq": ["$watched", True]}, 1, 0]
+                    }
+                }
+            }
+        },
+        {
+            "$addFields": {
+                "conversion": {
+                    "$cond": [
+                        {"$gt": ["$given", 0]},
+                        {"$divide": ["$watched", "$given"]},
+                        0
+                    ]
+                }
+            }
+        },
+        {"$sort": {"_id": 1}}
+    ]
+    
+    result = await db.demos.aggregate(pipeline).to_list(None)
+    
+    # Format the result
+    formatted_result = []
+    for item in result:
+        formatted_result.append({
+            "period": item["_id"],
+            "given": item["given"],
+            "watched": item["watched"],
+            "conversion": round(item["conversion"], 3)
+        })
+    
+    return formatted_result
+
+@api_router.get("/demos/summary")
+async def get_demo_summary(
+    start: str,
+    end: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get overall demo statistics for a date range"""
+    try:
+        start_date = datetime.fromisoformat(start.replace('Z', '+00:00'))
+        end_date = datetime.fromisoformat(end.replace('Z', '+00:00'))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format")
+    
+    pipeline = [
+        {
+            "$match": {
+                "given_at": {
+                    "$gte": start_date.isoformat(),
+                    "$lte": end_date.isoformat()
+                }
+            }
+        },
+        {
+            "$group": {
+                "_id": None,
+                "given": {"$sum": 1},
+                "watched": {
+                    "$sum": {
+                        "$cond": [{"$eq": ["$watched", True]}, 1, 0]
+                    }
+                }
+            }
+        },
+        {
+            "$addFields": {
+                "conversion": {
+                    "$cond": [
+                        {"$gt": ["$given", 0]},
+                        {"$divide": ["$watched", "$given"]},
+                        0
+                    ]
+                }
+            }
+        }
+    ]
+    
+    result = await db.demos.aggregate(pipeline).to_list(None)
+    
+    if not result:
+        return {"given": 0, "watched": 0, "conversion": 0}
+    
+    data = result[0]
+    return {
+        "given": data["given"],
+        "watched": data["watched"],
+        "conversion": round(data["conversion"], 3)
+    }
 
 # ============ SCHEDULER FOR FOLLOW-UP ALERTS ============
 
@@ -1029,3 +1422,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

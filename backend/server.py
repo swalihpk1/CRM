@@ -296,6 +296,7 @@ async def import_contacts(
         
         # Find which Excel column contains phone numbers
         phone_column = mapping.get('phone')
+        phone2_column = mapping.get('phone2')
         
         # Read Excel file
         contents = await file.read()
@@ -315,22 +316,38 @@ async def import_contacts(
         print(f"Excel columns: {list(df.columns)}")
         print(f"Mapping: {mapping}")
         print(f"Phone column: {phone_column}")
+        print(f"Phone 2 column: {phone2_column}")
+        print(f"Total rows in Excel: {len(df)}")
         
         # Replace empty values
         df = df.replace(["", " ", "N/A", "n/a", "NA", "na", "NULL", "null", "None", "none"], pd.NA)
         
-        # Remove duplicates
+        # Remove duplicates based on phone columns
+        duplicate_columns = []
         if phone_column and phone_column in df.columns:
-            df = df.drop_duplicates(subset=[phone_column], keep="first")
+            duplicate_columns.append(phone_column)
+        
+        original_count = len(df)
+        if duplicate_columns:
+            df = df.drop_duplicates(subset=duplicate_columns, keep="first")
+            file_duplicates_removed = original_count - len(df)
+            print(f"Removed {file_duplicates_removed} duplicate rows from Excel file")
+        else:
+            file_duplicates_removed = 0
         
         imported_count = 0
         skipped_count = 0
+        db_duplicates_count = 0  # Track database duplicates separately
+        empty_data_count = 0     # Track empty data skips
+        processed_count = 0      # Track total processed
         
         for index, row in df.iterrows():
+            processed_count += 1
             contact_data = {}
             
+            # Process all mapped fields except phone fields
             for crm_field, excel_col in mapping.items():
-                if excel_col in df.columns:
+                if excel_col in df.columns and crm_field not in ['phone', 'phone2']:
                     value = row[excel_col]
                     if pd.isna(value) or value is None:
                         continue
@@ -342,30 +359,39 @@ async def import_contacts(
                     except:
                         contact_data[crm_field] = str_value
             
-            # Get phone number
+            # Get primary phone number
             phone = None
             if phone_column and phone_column in df.columns:
                 phone_value = row[phone_column]
                 if pd.notna(phone_value):
                     phone = str(phone_value).strip()
-                contact_data.pop("phone", None)
+            
+            # Get secondary phone number
+            if phone2_column and phone2_column in df.columns:
+                phone2_value = row[phone2_column]
+                if pd.notna(phone2_value):
+                    phone2 = str(phone2_value).strip()
+                    contact_data['phone2'] = phone2
             
             # Generate phone if not available
             if not phone:
                 shop_name = contact_data.get("shop_name")
                 if shop_name and shop_name.strip():
                     clean_shop = shop_name.replace(" ", "_").replace("-", "_")[:15]
-                    phone = f"{clean_shop}_{imported_count + 1}"
+                    phone = f"{clean_shop}_{processed_count}"
                 else:
-                    phone = f"contact_{imported_count + 1}"
+                    phone = f"contact_{processed_count}"
             
-            # Check for duplicates
+            # Check for duplicates in database
             existing = await db.contacts.find_one({"phone": phone})
             if existing:
+                db_duplicates_count += 1
                 skipped_count += 1
                 continue
             
+            # Skip if no meaningful contact data
             if not contact_data:
+                empty_data_count += 1
                 skipped_count += 1
                 continue
             
@@ -381,17 +407,34 @@ async def import_contacts(
             await db.contacts.insert_one(contact.model_dump())
             imported_count += 1
         
+        # Calculate totals
+        total_processed = processed_count
+        
+        print(f"=== IMPORT SUMMARY ===")
+        print(f"Total rows in Excel: {original_count}")
+        print(f"File duplicates removed: {file_duplicates_removed}")
+        print(f"Rows processed: {processed_count}")
+        print(f"Successfully imported: {imported_count}")
+        print(f"Database duplicates: {db_duplicates_count}")
+        print(f"Empty data skipped: {empty_data_count}")
+        print(f"Total skipped: {skipped_count}")
+        
         await log_activity(
             current_user["id"],
             current_user["email"],
             "Imported contacts",
-            details=f"Imported {imported_count} contacts, skipped {skipped_count}"
+            details=f"Imported {imported_count} contacts, skipped {skipped_count} (duplicates: {db_duplicates_count}, empty: {empty_data_count}, file duplicates removed: {file_duplicates_removed})"
         )
         
         return {
             "message": "Import completed",
             "imported": imported_count,
-            "skipped": skipped_count
+            "skipped": skipped_count,
+            "file_duplicates_removed": file_duplicates_removed,
+            "db_duplicates": db_duplicates_count,
+            "empty_data_skipped": empty_data_count,
+            "total_processed": total_processed,
+            "original_excel_rows": original_count
         }
     
     except Exception as e:

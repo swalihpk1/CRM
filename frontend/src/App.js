@@ -208,6 +208,7 @@ const Dashboard = () => {
   const [activityLogsPage, setActivityLogsPage] = useState(0);
   const [hasMoreActivityLogs, setHasMoreActivityLogs] = useState(true);
   const [loadingActivityLogs, setLoadingActivityLogs] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const fetchStats = async () => {
     try {
@@ -514,54 +515,112 @@ const Dashboard = () => {
     }
   }, [searchQuery, statusFilter]);
 
+  // Close mobile menu on large screens
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) { // lg breakpoint
+        setIsMobileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   return (
     <div className="flex h-screen bg-gray-50">
+      {/* Mobile Header */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 bg-indigo-700 text-white p-4 flex justify-between items-center z-50">
+        <h1 className="text-xl font-bold">SmartCRM</h1>
+        <button
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="p-2 rounded-lg hover:bg-indigo-600 transition"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {isMobileMenuOpen ? (
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            ) : (
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            )}
+          </svg>
+        </button>
+      </div>
+
+      {/* Mobile Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <div className="w-64 bg-indigo-700 text-white flex flex-col">
+      <div className={`${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 fixed lg:static inset-y-0 left-0 z-50 w-64 bg-indigo-700 text-white flex flex-col transition-transform duration-300 ease-in-out`}>
         <div className="p-6 border-b border-indigo-600">
           <h1 className="text-2xl font-bold">SmartCRM</h1>
         </div>
         
         <nav className="flex-1 p-4 space-y-2">
           <button
-            onClick={() => setView('dashboard')}
-            className={`w-full text-left px-4 py-3 rounded-lg transition ${view === 'dashboard' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
+            onClick={() => {
+              setView('dashboard');
+              setIsMobileMenuOpen(false);
+            }}
+            className={`w-full text-left px-4 py-3 rounded-lg transition text-sm lg:text-base ${view === 'dashboard' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
           >
             📊 Dashboard
           </button>
           <button
-            onClick={() => setView('contacts')}
-            className={`w-full text-left px-4 py-3 rounded-lg transition ${view === 'contacts' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
+            onClick={() => {
+              setView('contacts');
+              setIsMobileMenuOpen(false);
+            }}
+            className={`w-full text-left px-4 py-3 rounded-lg transition text-sm lg:text-base ${view === 'contacts' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
           >
             👥 Contacts
           </button>
           <button
-            onClick={() => setView('followups')}
-            className={`w-full text-left px-4 py-3 rounded-lg transition ${view === 'followups' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
+            onClick={() => {
+              setView('followups');
+              setIsMobileMenuOpen(false);
+            }}
+            className={`w-full text-left px-4 py-3 rounded-lg transition text-sm lg:text-base ${view === 'followups' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
           >
             🔔 Follow-ups
           </button>
           <button
-            onClick={() => setView('meetings')}
-            className={`w-full text-left px-4 py-3 rounded-lg transition ${view === 'meetings' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
+            onClick={() => {
+              setView('meetings');
+              setIsMobileMenuOpen(false);
+            }}
+            className={`w-full text-left px-4 py-3 rounded-lg transition text-sm lg:text-base ${view === 'meetings' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
           >
             📅 Meetings
           </button>
           <button
-            onClick={() => setView('import')}
-            className={`w-full text-left px-4 py-3 rounded-lg transition ${view === 'import' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
+            onClick={() => {
+              setView('import');
+              setIsMobileMenuOpen(false);
+            }}
+            className={`w-full text-left px-4 py-3 rounded-lg transition text-sm lg:text-base ${view === 'import' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
           >
             📤 Import
           </button>
           <button
-            onClick={() => setView('demos')}
-            className={`w-full text-left px-4 py-3 rounded-lg transition ${view === 'demos' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
+            onClick={() => {
+              setView('demos');
+              setIsMobileMenuOpen(false);
+            }}
+            className={`w-full text-left px-4 py-3 rounded-lg transition text-sm lg:text-base ${view === 'demos' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
           >
             🎬 Demo Reports
           </button>
           <button
-            onClick={() => setView('activity')}
-            className={`w-full text-left px-4 py-3 rounded-lg transition ${view === 'activity' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
+            onClick={() => {
+              setView('activity');
+              setIsMobileMenuOpen(false);
+            }}
+            className={`w-full text-left px-4 py-3 rounded-lg transition text-sm lg:text-base ${view === 'activity' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
           >
             📝 Activity Log
           </button>
@@ -570,7 +629,7 @@ const Dashboard = () => {
         <div className="p-4 border-t border-indigo-600">
           <button
             onClick={logout}
-            className="w-full px-4 py-2 bg-red-500 hover:bg-red-600 rounded-lg transition"
+            className="w-full px-4 py-2 bg-red-500 hover:bg-red-600 rounded-lg transition text-sm lg:text-base"
           >
             Logout
           </button>
@@ -578,8 +637,8 @@ const Dashboard = () => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-auto">
-        <div className="p-8">
+      <div className="flex-1 overflow-auto lg:ml-0 pt-16 lg:pt-0 min-h-0">
+        <div className="p-4 lg:p-8 min-h-full">
           {view === 'dashboard' && <DashboardView stats={stats} followups={followups} />}
           {view === 'contacts' && (
             <ContactsView
@@ -769,12 +828,12 @@ const DashboardView = ({ stats, followups }) => {
   
   return (
     <div>
-      <h2 className="text-3xl font-bold text-gray-800 mb-6">Dashboard</h2>
+      <h2 className="text-2xl lg:text-3xl font-bold text-gray-800 mb-4 lg:mb-6">Dashboard</h2>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-indigo-500">
-          <h3 className="text-gray-600 text-sm font-medium mb-2">Total Contacts</h3>
-          <p className="text-4xl font-bold text-gray-800">{stats.total}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 lg:gap-6 mb-6 lg:mb-8">
+        <div className="bg-white rounded-xl shadow-md p-4 lg:p-6 border-l-4 border-indigo-500">
+          <h3 className="text-gray-600 text-xs lg:text-sm font-medium mb-2">Total Contacts</h3>
+          <p className="text-2xl lg:text-4xl font-bold text-gray-800">{stats.total}</p>
         </div>
         
         {statuses.map(status => {
@@ -793,9 +852,9 @@ const DashboardView = ({ stats, followups }) => {
           };
           const colors = getStatusColors(status);
           return (
-            <div key={status} className={`${colors.bg} rounded-xl shadow-md p-6 border-l-4 ${colors.border}`}>
-              <h3 className={`${colors.text} text-sm font-medium mb-2`}>{status}</h3>
-              <p className={`text-3xl font-bold ${colors.count}`}>{stats.by_status[status] || 0}</p>
+            <div key={status} className={`${colors.bg} rounded-xl shadow-md p-4 lg:p-6 border-l-4 ${colors.border}`}>
+              <h3 className={`${colors.text} text-xs lg:text-sm font-medium mb-2`}>{status}</h3>
+              <p className={`text-2xl lg:text-3xl font-bold ${colors.count}`}>{stats.by_status[status] || 0}</p>
             </div>
           );
         })}
@@ -815,24 +874,24 @@ const DashboardView = ({ stats, followups }) => {
                   className="p-3 bg-red-50 rounded-lg border border-red-200 cursor-pointer"
                   onClick={() => openContactDetailModal(followup)}
                 >
-                  <div className="flex justify-between items-start">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
                     <div className="flex-1">
-                      <p className="font-medium text-gray-800">{getContactName(followup)}</p>
-                      <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
-                      <p className="text-sm text-gray-600">Due: {format12Hour(followup.follow_up_date)}</p>
-                      {followup.notes && <p className="text-sm text-gray-500 mt-1">{followup.notes}</p>}
+                      <p className="font-medium text-gray-800 text-sm lg:text-base">{getContactName(followup)}</p>
+                      <p className="text-xs lg:text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
+                      <p className="text-xs lg:text-sm text-gray-600">Due: {format12Hour(followup.follow_up_date)}</p>
+                      {followup.notes && <p className="text-xs lg:text-sm text-gray-500 mt-1">{followup.notes}</p>}
                     </div>
-                    <div className="flex gap-1 ml-2">
+                    <div className="flex gap-2 sm:gap-1 sm:ml-2">
                       <a
                         href={`tel:${getContactPhone(followup)}`}
-                        className="px-2 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 text-xs font-semibold"
+                        className="px-3 py-2 sm:px-2 sm:py-1 bg-green-600 text-white rounded-md hover:bg-green-700 text-xs font-semibold touch-manipulation"
                         title="Call Now"
                         onClick={(e) => e.stopPropagation()}
                       >
                         📞
                       </a>
                       <button
-                        className="px-2 py-1 bg-orange-600 text-white rounded-md hover:bg-orange-700 text-xs font-semibold"
+                        className="px-3 py-2 sm:px-2 sm:py-1 bg-orange-600 text-white rounded-md hover:bg-orange-700 text-xs font-semibold touch-manipulation"
                         title="Mark Demo Given"
                         onClick={async (e) => {
                           e.stopPropagation();
@@ -1176,29 +1235,29 @@ const ContactsView = ({
   
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-3xl font-bold text-gray-800">Contacts</h2>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4 lg:mb-6">
+        <h2 className="text-2xl lg:text-3xl font-bold text-gray-800">Contacts</h2>
         <button
           onClick={onAddContact}
-          className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
+          className="px-4 lg:px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold text-sm lg:text-base touch-manipulation"
         >
           + Add Contact
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white rounded-xl shadow-md p-4 mb-6 flex gap-4">
+      {/* Search and Filter */}
+      <div className="bg-white rounded-xl shadow-md p-4 mb-4 lg:mb-6 flex flex-col sm:flex-row gap-4">
         <input
           type="text"
           placeholder="Search contacts..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm lg:text-base"
         />
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-sm lg:text-base min-w-0 sm:min-w-[150px]"
         >
           <option value="" className="text-gray-500">All Statuses</option>
           <option value="None" className="text-gray-700">🔘 None</option>
@@ -1213,15 +1272,16 @@ const ContactsView = ({
       </div>
 
       {/* Bulk Actions Bar */}
+      {/* Bulk Actions */}
       {selectedContacts.size > 0 && (
         <div className="bg-indigo-50 border-l-4 border-indigo-400 p-4 mb-4 rounded-lg">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center">
-              <span className="text-indigo-800 font-medium">
+              <span className="text-indigo-800 font-medium text-sm lg:text-base">
                 {selectedContacts.size} contact{selectedContacts.size !== 1 ? 's' : ''} selected
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <select
                 onChange={async (e) => {
                   if (e.target.value) {
@@ -1240,7 +1300,7 @@ const ContactsView = ({
                     setSelectedContacts(new Set()); // Clear selection after update
                   }
                 }}
-                className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 bg-white"
+                className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 bg-white flex-1 sm:flex-none min-w-0"
               >
                 <option value="" className="text-gray-500">Update Status</option>
                 <option value="None" className="text-gray-700">🔘 None</option>
@@ -1281,25 +1341,25 @@ const ContactsView = ({
         <div className="flex justify-end p-4 border-b">
           <button
             onClick={() => setShowColumnSettings(!showColumnSettings)}
-            className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition"
+            className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition touch-manipulation"
           >
-            ⚙️ Column Settings
+            ⚙️ <span className="hidden sm:inline">Column Settings</span>
           </button>
         </div>
         
         {/* Column Settings Panel */}
         {showColumnSettings && (
           <div className="p-4 border-b bg-gray-50">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
               <h3 className="text-sm font-medium text-gray-700">Customize Columns</h3>
               <button
                 onClick={resetColumns}
-                className="text-xs text-indigo-600 hover:text-indigo-800"
+                className="text-xs text-indigo-600 hover:text-indigo-800 self-start sm:self-auto"
               >
                 Reset to Default
               </button>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
               {columns.filter(col => col.draggable !== false).map(column => (
                 <label key={column.id} className="flex items-center gap-2 text-sm">
                   <input
@@ -1323,7 +1383,7 @@ const ContactsView = ({
         <div className="overflow-x-auto">
           <table className="w-full min-w-max">
             <thead className="bg-gray-50 border-b">
-              <tr>
+              <tr className="text-xs lg:text-sm">
                 {visibleColumns.map(column => {
                   if (column.id === 'checkbox') {
                     return (
@@ -1589,7 +1649,7 @@ const ContactsView = ({
         <div className="text-center py-4">
           <button
             onClick={onLoadMore}
-            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
+            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold touch-manipulation"
           >
             Load More Contacts
           </button>
@@ -2774,7 +2834,7 @@ const MeetingsView = ({ contacts, globalMeetings = [] }) => {
       {/* New Meeting Modal */}
       {showNewMeetingModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto mx-4">
             <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
               <h2 className="text-2xl font-bold text-gray-800">Schedule New Meeting</h2>
               <button onClick={() => setShowNewMeetingModal(false)} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
@@ -3104,9 +3164,9 @@ const ImportView = ({ onImportComplete }) => {
 
   return (
     <div>
-      <h2 className="text-3xl font-bold text-gray-800 mb-6">Import Contacts from Excel</h2>
+      <h2 className="text-2xl lg:text-3xl font-bold text-gray-800 mb-4 lg:mb-6">Import Contacts from Excel</h2>
 
-      <div className="bg-white rounded-xl shadow-md p-6">
+      <div className="bg-white rounded-xl shadow-md p-4 lg:p-6">
         <div className="mb-6">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Upload Excel File (.xlsx)
@@ -3121,8 +3181,8 @@ const ImportView = ({ onImportComplete }) => {
 
         {columns.length > 0 && (
           <div className="mb-6">
-            <h3 className="text-lg font-semibold mb-4">Map Excel Columns to CRM Fields</h3>
-            <div className="grid gap-4">
+            <h3 className="text-base lg:text-lg font-semibold mb-4">Map Excel Columns to CRM Fields</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Phone Column (Optional)
@@ -3130,6 +3190,22 @@ const ImportView = ({ onImportComplete }) => {
                 <select
                   value={mapping.phone || ''}
                   onChange={(e) => setMapping({ ...mapping, phone: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="">Select column...</option>
+                  {columns.map(col => (
+                    <option key={col} value={col}>{col}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Phone 2 Column (Optional)
+                </label>
+                <select
+                  value={mapping.phone2 || ''}
+                  onChange={(e) => setMapping({ ...mapping, phone2: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                 >
                   <option value="">Select column...</option>
@@ -3230,7 +3306,7 @@ const ImportView = ({ onImportComplete }) => {
           <button
             onClick={handleImport}
             disabled={importing}
-            className="w-full py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold disabled:bg-gray-400"
+            className="w-full py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold disabled:bg-gray-400 touch-manipulation"
           >
             {importing ? 'Importing...' : 'Import Contacts'}
           </button>
@@ -3238,9 +3314,43 @@ const ImportView = ({ onImportComplete }) => {
 
         {result && (
           <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-            <h4 className="font-semibold text-green-800 mb-2">Import Complete!</h4>
-            <p className="text-sm text-green-700">Imported: {result.imported} contacts</p>
-            <p className="text-sm text-green-700">Skipped (duplicates): {result.skipped}</p>
+            <h4 className="font-semibold text-green-800 mb-3 text-sm lg:text-base">Import Complete!</h4>
+            <div className="space-y-2 text-xs lg:text-sm">
+              <div className="flex justify-between">
+                <span className="text-green-700">📊 Total Excel Rows:</span>
+                <span className="font-medium text-green-800">{result.original_excel_rows || 0}</span>
+              </div>
+              {result.file_duplicates_removed > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-orange-700">🗂️ File Duplicates Removed:</span>
+                  <span className="font-medium text-orange-800">{result.file_duplicates_removed}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-blue-700">⚙️ Rows Processed:</span>
+                <span className="font-medium text-blue-800">{result.total_processed || 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-green-700">✅ Successfully Imported:</span>
+                <span className="font-medium text-green-800">{result.imported}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-red-700">🔄 Database Duplicates:</span>
+                <span className="font-medium text-red-800">{result.db_duplicates || 0}</span>
+              </div>
+              {result.empty_data_skipped > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">📝 Empty Data Skipped:</span>
+                  <span className="font-medium text-gray-700">{result.empty_data_skipped}</span>
+                </div>
+              )}
+              <div className="border-t border-green-300 pt-2 mt-3">
+                <div className="flex justify-between font-semibold">
+                  <span className="text-green-700">📋 Total Skipped:</span>
+                  <span className="text-green-800">{result.skipped}</span>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -4017,7 +4127,7 @@ const ContactDetailModal = ({ contact, onClose, onUpdate, onDelete, onLogCall, o
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-auto">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-auto mx-4">
         <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
           <h2 className="text-2xl font-bold text-gray-800">Contact Details</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
@@ -4422,7 +4532,7 @@ const GlobalMeetingModal = ({ contacts, selectedContacts, onClose, onSave }) => 
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[100]">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto mx-4">
         <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
           <h2 className="text-2xl font-bold text-gray-800">Schedule New Meeting</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>

@@ -1086,6 +1086,7 @@ const ContactsView = ({
     { id: 'checkbox', label: 'Select', visible: true, width: 'min-w-[50px]', draggable: false },
     { id: 'phone', label: 'Phone', visible: true, width: 'min-w-[120px]', draggable: true },
     { id: 'phone2', label: 'Phone 2', visible: false, width: 'min-w-[120px]', draggable: true },
+    { id: 'customerName', label: 'Customer Name', visible: true, width: 'min-w-[150px]', draggable: true },
     { id: 'shopName', label: 'Shop Name', visible: true, width: 'min-w-[150px]', draggable: true },
     { id: 'address', label: 'Address', visible: true, width: 'min-w-[200px]', draggable: true },
     { id: 'city', label: 'City', visible: true, width: 'min-w-[100px]', draggable: true },
@@ -1501,6 +1502,28 @@ const ContactsView = ({
                                 📞
                               </a>
                             )}
+                          </div>
+                        );
+                      case 'customerName':
+                        return (
+                          <div className="flex items-center justify-between">
+                            <span>{contact.customer_name || '-'}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const newCustomerName = prompt('Enter customer name:', contact.customer_name || '');
+                                if (newCustomerName !== null && newCustomerName !== (contact.customer_name || '')) {
+                                  onUpdate({
+                                    ...contact,
+                                    customer_name: newCustomerName
+                                  });
+                                }
+                              }}
+                              className="text-indigo-600 hover:text-indigo-800 text-sm ml-2"
+                              title="Edit Customer Name"
+                            >
+                              ✏️
+                            </button>
                           </div>
                         );
                       case 'shopName':
@@ -3206,6 +3229,22 @@ const ImportView = ({ onImportComplete }) => {
                 <select
                   value={mapping.phone2 || ''}
                   onChange={(e) => setMapping({ ...mapping, phone2: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="">Select column...</option>
+                  {columns.map(col => (
+                    <option key={col} value={col}>{col}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Customer Name Column (Optional)
+                </label>
+                <select
+                  value={mapping.customer_name || ''}
+                  onChange={(e) => setMapping({ ...mapping, customer_name: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                 >
                   <option value="">Select column...</option>

@@ -61,6 +61,7 @@ class Contact(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     phone: str
+    customer_name: Optional[str] = None
     status: str = "None"
     data: Dict[str, Any] = {}  # Flexible schema for other columns
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -69,11 +70,13 @@ class Contact(BaseModel):
 
 class ContactCreate(BaseModel):
     phone: str
+    customer_name: Optional[str] = None
     status: Optional[str] = "None"
     data: Dict[str, Any] = {}
 
 class ContactUpdate(BaseModel):
     phone: Optional[str] = None
+    customer_name: Optional[str] = None
     status: Optional[str] = None
     data: Optional[Dict[str, Any]] = None
 
@@ -294,9 +297,10 @@ async def import_contacts(
         import json
         mapping = json.loads(column_mapping)
         
-        # Find which Excel column contains phone numbers
+        # Find which Excel column contains phone numbers and customer name
         phone_column = mapping.get('phone')
         phone2_column = mapping.get('phone2')
+        customer_name_column = mapping.get('customer_name')
         
         # Read Excel file
         contents = await file.read()
@@ -345,9 +349,9 @@ async def import_contacts(
             processed_count += 1
             contact_data = {}
             
-            # Process all mapped fields except phone fields
+            # Process all mapped fields except phone and customer_name fields
             for crm_field, excel_col in mapping.items():
-                if excel_col in df.columns and crm_field not in ['phone', 'phone2']:
+                if excel_col in df.columns and crm_field not in ['phone', 'phone2', 'customer_name']:
                     value = row[excel_col]
                     if pd.isna(value) or value is None:
                         continue
@@ -365,6 +369,13 @@ async def import_contacts(
                 phone_value = row[phone_column]
                 if pd.notna(phone_value):
                     phone = str(phone_value).strip()
+            
+            # Get customer name
+            customer_name = None
+            if customer_name_column and customer_name_column in df.columns:
+                customer_name_value = row[customer_name_column]
+                if pd.notna(customer_name_value):
+                    customer_name = str(customer_name_value).strip()
             
             # Get secondary phone number
             if phone2_column and phone2_column in df.columns:
@@ -400,6 +411,7 @@ async def import_contacts(
             
             contact = Contact(
                 phone=phone,
+                customer_name=customer_name,
                 status=status,
                 data=contact_data
             )
@@ -474,6 +486,8 @@ async def preview_excel(
             col_lower = col.lower().strip()
             if col_lower in ['shop name', 'shopname', 'shop_name', 'business name']:
                 suggested_mapping[col] = 'shop_name'
+            elif col_lower in ['customer name', 'customername', 'customer_name', 'name', 'client name', 'owner name']:
+                suggested_mapping[col] = 'customer_name'
             elif col_lower in ['street', 'address', 'location', 'addr']:
                 suggested_mapping[col] = 'address'
             elif col_lower in ['phone number', 'phone_number', 'phone', 'mobile', 'contact', 'contact number']:
@@ -510,6 +524,7 @@ async def get_contacts(
     if search:
         query["$or"] = [
             {"phone": {"$regex": search, "$options": "i"}},
+            {"customer_name": {"$regex": search, "$options": "i"}},
             {"data": {"$regex": search, "$options": "i"}}
         ]
     
@@ -544,7 +559,7 @@ async def create_contact(
     contact = Contact(**contact_data.model_dump())
     await db.contacts.insert_one(contact.model_dump())
     
-    # Get shop name for logging
+    # Get shop name and customer name for logging
     contact_data = contact.data if hasattr(contact, 'data') else {}
     shop_name = (
         contact_data.get('shop_name') or 
@@ -554,14 +569,15 @@ async def create_contact(
         contact_data.get('Shop') or
         'Unknown Shop'
     )
-    print(f"Contact creation - Phone: {contact.phone}, Shop name: {shop_name}, Contact data keys: {list(contact_data.keys())}")
+    customer_name = getattr(contact, 'customer_name', None) or 'Unknown Customer'
+    print(f"Contact creation - Phone: {contact.phone}, Customer: {customer_name}, Shop name: {shop_name}, Contact data keys: {list(contact_data.keys())}")
     
     await log_activity(
         current_user['id'],
         current_user['email'],
         "Created contact",
         target=contact.phone,
-        details=f"Shop: {shop_name}, Phone: {contact.phone}"
+        details=f"Customer: {customer_name}, Shop: {shop_name}, Phone: {contact.phone}"
     )
     
     return contact
@@ -591,7 +607,7 @@ async def update_contact(
     
     await db.contacts.update_one({"id": contact_id}, {"$set": update_data})
     
-    # Get shop name for logging (check both original and updated data)
+    # Get shop name and customer name for logging (check both original and updated data)
     shop_name = (
         update_data.get('data', {}).get('shop_name') or 
         contact.get('data', {}).get('shop_name') or 
@@ -599,13 +615,18 @@ async def update_contact(
         contact.get('data', {}).get('Shop Name') or 
         'Unknown Shop'
     )
+    customer_name = (
+        update_data.get('customer_name') or
+        contact.get('customer_name') or
+        'Unknown Customer'
+    )
     
     await log_activity(
         current_user['id'],
         current_user['email'],
         "Updated contact",
         target=contact['phone'],
-        details=f"Shop: {shop_name}, Fields: {', '.join(update_data.keys())}"
+        details=f"Customer: {customer_name}, Shop: {shop_name}, Fields: {', '.join(update_data.keys())}"
     )
     
     updated_contact = await db.contacts.find_one({"id": contact_id}, {"_id": 0})
@@ -620,7 +641,7 @@ async def delete_contact(
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
     
-    # Get shop name before deletion for logging
+    # Get shop name and customer name before deletion for logging
     contact_data = contact.get('data', {})
     shop_name = (
         contact_data.get('shop_name') or 
@@ -632,7 +653,8 @@ async def delete_contact(
         contact.get('Shop_Name') or
         'Unknown Shop'
     )
-    print(f"Contact deletion - Phone: {contact.get('phone')}, Shop name: {shop_name}, Contact data keys: {list(contact_data.keys())}")
+    customer_name = contact.get('customer_name') or 'Unknown Customer'
+    print(f"Contact deletion - Phone: {contact.get('phone')}, Customer: {customer_name}, Shop name: {shop_name}, Contact data keys: {list(contact_data.keys())}")
     
     await db.contacts.delete_one({"id": contact_id})
     
@@ -641,7 +663,7 @@ async def delete_contact(
         current_user['email'],
         "Deleted contact",
         target=contact['phone'],
-        details=f"Shop: {shop_name}, Phone: {contact['phone']}"
+        details=f"Customer: {customer_name}, Shop: {shop_name}, Phone: {contact['phone']}"
     )
     
     return {"message": "Contact deleted successfully"}

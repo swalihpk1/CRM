@@ -5,8 +5,8 @@
   "framework": "create-react-app",
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "https://backend.frostbay.online/api/$1"
+    "source": "/api/(.*)",
+    "destination": "http://65.1.135.7/api/$1"
     }
   ]
 }

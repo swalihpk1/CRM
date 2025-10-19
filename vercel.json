@@ -20,11 +20,11 @@
     },
     {
       "src": "/(.*)",
-      "dest": "frontend/build/index.html"
+      "dest": "frontend/build/$1"
     }
   ],
   "buildCommand": "cd frontend && npm install --legacy-peer-deps && npm run build",
   "installCommand": "cd frontend && npm install --legacy-peer-deps",
   "outputDirectory": "frontend/build",
-  "framework": "create-react-app"
+  "framework": null
 }

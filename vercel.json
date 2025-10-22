@@ -1,12 +1,10 @@
 {
   "version": 2,
-  "buildCommand": "npm install --legacy-peer-deps && npm run build",
-  "outputDirectory": "build",
   "framework": "create-react-app",
   "rewrites": [
     {
-    "source": "/api/(.*)",
-    "destination": "http://65.1.135.7/api/$1"
+      "source": "/api/(.*)",
+      "destination": "http://www.crm.bookiebuddy.in/api/$1"
     }
   ]
 }

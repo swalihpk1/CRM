@@ -522,17 +522,65 @@ async def get_contacts(
     query = {}
     
     if search:
-        query["$or"] = [
+        # Log the search query for debugging
+        print(f"Searching for: {search}")
+        
+        # Build a comprehensive search query
+        search_conditions = [
             {"phone": {"$regex": search, "$options": "i"}},
             {"customer_name": {"$regex": search, "$options": "i"}},
-            {"data": {"$regex": search, "$options": "i"}}
         ]
+        
+        # Search in all possible nested data field variations
+        data_fields = [
+            # Shop names
+            "shop_name", "Shop_Name", "Shop Name", "SHOP_NAME", "shopName",
+            "business_name", "Business_Name", "Business Name", "BUSINESS_NAME", "businessName",
+            "shop", "Shop", "SHOP", "store_name", "Store_Name", "Store Name",
+            # Customer/Owner names  
+            "name", "Name", "NAME", "customer_name", "Customer_Name", "Customer Name",
+            "owner_name", "Owner_Name", "Owner Name", "contact_person", "Contact_Person", "Contact Person",
+            # Addresses
+            "address", "Address", "ADDRESS", "full_address", "Full_Address", "Full Address",
+            "city", "City", "CITY", "state", "State", "STATE", "location", "Location",
+            # Other common fields
+            "company", "Company", "COMPANY", "firm", "Firm", "FIRM",
+            "organization", "Organization", "ORGANIZATION"
+        ]
+        
+        # Add searches for all possible data field variations
+        for field in data_fields:
+            search_conditions.append({f"data.{field}": {"$regex": search, "$options": "i"}})
+        
+        # Also add a text search that converts the entire data object to string
+        # This is a fallback for any field we might have missed
+        search_conditions.extend([
+            {"$expr": {"$regexMatch": {"input": {"$toString": "$data"}, "regex": search, "options": "i"}}},
+            # Search in stringified JSON of data field (fallback)
+            {"data": {"$regex": search, "$options": "i"}}
+        ])
+        
+        query["$or"] = search_conditions
     
     if status:
         query["status"] = status
     
     contacts = await db.contacts.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     return contacts
+
+@api_router.get("/contacts/debug-data")
+async def debug_contact_data(current_user: dict = Depends(get_current_user)):
+    """Debug endpoint to see the actual data structure"""
+    contacts = await db.contacts.find({}, {"_id": 0}).limit(5).to_list(5)
+    result = []
+    for contact in contacts:
+        result.append({
+            "phone": contact.get("phone"),
+            "customer_name": contact.get("customer_name"),
+            "data_keys": list(contact.get("data", {}).keys()) if contact.get("data") else [],
+            "sample_data": contact.get("data", {})
+        })
+    return result
 
 @api_router.get("/contacts/count")
 async def get_contacts_count(current_user: dict = Depends(get_current_user)):

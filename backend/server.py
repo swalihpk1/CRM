@@ -533,40 +533,39 @@ async def get_contacts(
         
         # Search in all possible nested data field variations
         data_fields = [
-            # Shop names
-            "shop_name", "Shop_Name", "Shop Name", "SHOP_NAME", "shopName",
-            "business_name", "Business_Name", "Business Name", "BUSINESS_NAME", "businessName",
-            "shop", "Shop", "SHOP", "store_name", "Store_Name", "Store Name",
+            # Shop names - most common variations
+            "shop_name", "Shop_Name", "Shop Name", "shopName", "SHOP_NAME",
+            "business_name", "Business_Name", "Business Name", "businessName", "BUSINESS_NAME",
+            "shop", "Shop", "SHOP", "store_name", "Store_Name", "Store Name", "storeName",
             # Customer/Owner names  
-            "name", "Name", "NAME", "customer_name", "Customer_Name", "Customer Name",
-            "owner_name", "Owner_Name", "Owner Name", "contact_person", "Contact_Person", "Contact Person",
+            "name", "Name", "NAME", "customer_name", "Customer_Name", "Customer Name", "customerName",
+            "owner_name", "Owner_Name", "Owner Name", "ownerName", "OWNER_NAME",
+            "contact_person", "Contact_Person", "Contact Person", "contactPerson",
             # Addresses
-            "address", "Address", "ADDRESS", "full_address", "Full_Address", "Full Address",
-            "city", "City", "CITY", "state", "State", "STATE", "location", "Location",
+            "address", "Address", "ADDRESS", "full_address", "Full_Address", "Full Address", "fullAddress",
+            "city", "City", "CITY", "state", "State", "STATE", "location", "Location", "LOCATION",
             # Other common fields
             "company", "Company", "COMPANY", "firm", "Firm", "FIRM",
-            "organization", "Organization", "ORGANIZATION"
+            "organization", "Organization", "ORGANIZATION", "title", "Title", "TITLE"
         ]
         
         # Add searches for all possible data field variations
         for field in data_fields:
             search_conditions.append({f"data.{field}": {"$regex": search, "$options": "i"}})
         
-        # Also add a text search that converts the entire data object to string
-        # This is a fallback for any field we might have missed
-        search_conditions.extend([
-            {"$expr": {"$regexMatch": {"input": {"$toString": "$data"}, "regex": search, "options": "i"}}},
-            # Search in stringified JSON of data field (fallback)
-            {"data": {"$regex": search, "$options": "i"}}
-        ])
-        
         query["$or"] = search_conditions
     
     if status:
         query["status"] = status
     
-    contacts = await db.contacts.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
-    return contacts
+    try:
+        print(f"MongoDB query: {query}")  # Debug log
+        contacts = await db.contacts.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+        print(f"Found {len(contacts)} contacts")  # Debug log
+        return contacts
+    except Exception as e:
+        print(f"Error in get_contacts: {str(e)}")  # Debug log
+        raise HTTPException(status_code=500, detail=f"Database query error: {str(e)}")
 
 @api_router.get("/contacts/debug-data")
 async def debug_contact_data(current_user: dict = Depends(get_current_user)):
@@ -581,6 +580,17 @@ async def debug_contact_data(current_user: dict = Depends(get_current_user)):
             "sample_data": contact.get("data", {})
         })
     return result
+
+@api_router.get("/test-search")
+async def test_search_no_auth():
+    """Test endpoint to verify search functionality without authentication"""
+    try:
+        # Test basic query
+        query = {"$or": [{"phone": {"$regex": "test", "$options": "i"}}]}
+        result = await db.contacts.find(query, {"_id": 0}).limit(1).to_list(1)
+        return {"status": "success", "query_works": True, "sample_count": len(result)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @api_router.get("/contacts/count")
 async def get_contacts_count(current_user: dict = Depends(get_current_user)):

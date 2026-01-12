@@ -53,6 +53,7 @@ const AuthProvider = ({ children }) => {
     try {
       const response = await axios.get(`${API}/auth/me`);
       setUser(response.data);
+      console.log('User data:', response.data); // Debug log
     } catch (error) {
       console.error('Failed to fetch user:', error);
       logout();
@@ -107,13 +108,9 @@ const AuthPage = () => {
     e.preventDefault();
     setError('');
     try {
-      if (isLogin) {
-        await login(email, password);
-      } else {
-        await signup(email, password);
-      }
+      await login(email, password);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Authentication failed');
+      setError(err.response?.data?.detail || 'Login failed');
     }
   };
 
@@ -125,19 +122,9 @@ const AuthPage = () => {
           <p className="text-gray-600">Manage your contacts efficiently</p>
         </div>
         
-        <div className="flex mb-6 bg-gray-100 rounded-lg p-1">
-          <button
-            onClick={() => setIsLogin(true)}
-            className={`flex-1 py-2 rounded-md transition ${isLogin ? 'bg-white shadow text-indigo-600 font-semibold' : 'text-gray-600'}`}
-          >
-            Login
-          </button>
-          <button
-            onClick={() => setIsLogin(false)}
-            className={`flex-1 py-2 rounded-md transition ${!isLogin ? 'bg-white shadow text-indigo-600 font-semibold' : 'text-gray-600'}`}
-          >
-            Sign Up
-          </button>
+        <div className="text-center mb-6">
+          <h2 className="text-xl font-semibold text-gray-700">Login</h2>
+          <p className="text-sm text-gray-500 mt-1">Please sign in to continue</p>
         </div>
 
         {error && (
@@ -173,7 +160,7 @@ const AuthPage = () => {
             type="submit"
             className="w-full bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 transition font-semibold"
           >
-            {isLogin ? 'Login' : 'Sign Up'}
+            Login
           </button>
         </form>
       </div>
@@ -183,7 +170,7 @@ const AuthPage = () => {
 
 // Main Dashboard Component
 const Dashboard = () => {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const [view, setView] = useState('dashboard');
   const [contacts, setContacts] = useState([]);
   const [stats, setStats] = useState({ total: 0, by_status: {} });
@@ -484,20 +471,21 @@ const Dashboard = () => {
 
   const handleUpdateStatus = async (contactId, status) => {
     try {
-      // Optimistically update the contact in the list immediately
+      // Make API call first to get the updated contact with assigned_staff
+      const response = await axios.put(`${API}/contacts/${contactId}`, { status });
+      const updatedContact = response.data;
+      
+      // Update the contact in the list with all updated fields including assigned_staff
       setContacts(prevContacts => 
         prevContacts.map(contact => 
-          contact.id === contactId ? { ...contact, status } : contact
+          contact.id === contactId ? updatedContact : contact
         )
       );
       
       // Update selected contact if it's the one being modified
       if (selectedContact && selectedContact.id === contactId) {
-        setSelectedContact({ ...selectedContact, status });
+        setSelectedContact(updatedContact);
       }
-      
-      // Make API call
-      await axios.put(`${API}/contacts/${contactId}`, { status });
       
       // Update stats and activity logs to reflect the change
       fetchStats();
@@ -597,15 +585,17 @@ const Dashboard = () => {
           >
             📅 Meetings
           </button>
-          <button
-            onClick={() => {
-              setView('import');
-              setIsMobileMenuOpen(false);
-            }}
-            className={`w-full text-left px-4 py-3 rounded-lg transition text-sm lg:text-base ${view === 'import' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
-          >
-            📤 Import
-          </button>
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => {
+                setView('import');
+                setIsMobileMenuOpen(false);
+              }}
+              className={`w-full text-left px-4 py-3 rounded-lg transition text-sm lg:text-base ${view === 'import' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
+            >
+              📤 Import
+            </button>
+          )}
           <button
             onClick={() => {
               setView('demos');
@@ -624,6 +614,28 @@ const Dashboard = () => {
           >
             📝 Activity Log
           </button>
+          {user?.role === 'admin' && (
+            <>
+              <button
+                onClick={() => {
+                  setView('productivity');
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full text-left px-4 py-3 rounded-lg transition text-sm lg:text-base ${view === 'productivity' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
+              >
+                📊 Productivity
+              </button>
+              <button
+                onClick={() => {
+                  setView('users');
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full text-left px-4 py-3 rounded-lg transition text-sm lg:text-base ${view === 'users' ? 'bg-indigo-600' : 'hover:bg-indigo-600'}`}
+              >
+                👤 Users
+              </button>
+            </>
+          )}
         </nav>
         
         <div className="p-4 border-t border-indigo-600">
@@ -699,7 +711,7 @@ const Dashboard = () => {
               globalMeetings={globalMeetings}
             />
           )}
-          {view === 'import' && (
+          {view === 'import' && user?.role === 'admin' && (
             <ImportView onImportComplete={() => { resetContacts(); fetchStats(); resetActivityLogs(); }} />
           )}
           {view === 'demos' && (
@@ -713,6 +725,12 @@ const Dashboard = () => {
               loading={loadingActivityLogs}
               contacts={contacts}
             />
+          )}
+          {view === 'productivity' && user?.role === 'admin' && (
+            <ProductivityView />
+          )}
+          {view === 'users' && user?.role === 'admin' && (
+            <UsersView />
           )}
         </div>
       </div>
@@ -1091,6 +1109,7 @@ const ContactsView = ({
     { id: 'address', label: 'Address', visible: true, width: 'min-w-[200px]', draggable: true },
     { id: 'city', label: 'City', visible: true, width: 'min-w-[100px]', draggable: true },
     { id: 'state', label: 'State', visible: true, width: 'min-w-[80px]', draggable: true },
+    { id: 'assignedStaff', label: 'Assigned Staff', visible: true, width: 'min-w-[150px]', draggable: true },
     { id: 'status', label: 'Status', visible: true, width: 'min-w-[120px]', draggable: true },
     { id: 'category', label: 'Category', visible: true, width: 'min-w-[150px]', draggable: true },
     { id: 'actions', label: 'Actions', visible: true, width: 'min-w-[100px]', draggable: false }
@@ -1569,6 +1588,12 @@ const ContactsView = ({
                             {contact.data.state || contact.data.State || '-'}
                           </span>
                         );
+                      case 'assignedStaff':
+                        return (
+                          <span className={`text-sm ${contact.assigned_staff ? 'text-indigo-600 font-medium' : 'text-gray-400'}`}>
+                            {contact.assigned_staff || 'Unassigned'}
+                          </span>
+                        );
                       case 'status':
                         return (
                           <div className="relative">
@@ -1712,8 +1737,11 @@ const FollowUpsView = ({
   loading, 
   onResetFollowups 
 }) => {
-  const [dateFilter, setDateFilter] = useState('all');
+  const [activeTab, setActiveTab] = useState('pending'); // pending or completed
+  const [dateFilter, setDateFilter] = useState('today');
+  const [customDate, setCustomDate] = useState('');
   const [filteredFollowups, setFilteredFollowups] = useState([]);
+  const [completedFollowups, setCompletedFollowups] = useState([]);
   const [localLoading, setLocalLoading] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [selectedFollowup, setSelectedFollowup] = useState(null);
@@ -1724,22 +1752,12 @@ const FollowUpsView = ({
   const [nextFollowupNotes, setNextFollowupNotes] = useState('');
   const [showContactDetailModal, setShowContactDetailModal] = useState(false);
   const [selectedContact, setSelectedContact] = useState(null);
-
-  useEffect(() => {
-    const handleScroll = () => {
-      if (loading || !hasMore) return;
-      
-      const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
-      if (scrollTop + clientHeight >= scrollHeight - 100) { // Trigger when 100px from bottom
-        if (dateFilter !== 'all') {
-          onLoadMore(dateFilter);
-        }
-      }
-    };
-
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [hasMore, loading, onLoadMore, dateFilter]);
+  const [statistics, setStatistics] = useState({
+    total: 0,
+    completed: 0,
+    pending: 0,
+    overdue: 0
+  });
 
   const openCompletionModal = (followup) => {
     setSelectedFollowup(followup);
@@ -1795,10 +1813,8 @@ const FollowUpsView = ({
       
       // Close modal and refresh data
       setShowCompletionModal(false);
+      fetchFilteredFollowups(); // Refresh the current view
       onRefresh();
-      if (dateFilter !== 'all') {
-        fetchFilteredFollowups();
-      }
       
       // Refresh dashboard and activity logs
       if (window.refreshFollowups) {
@@ -1815,235 +1831,263 @@ const FollowUpsView = ({
   };
 
   const fetchFilteredFollowups = async () => {
-    if (dateFilter === 'all') {
-      setFilteredFollowups([]);
-    } else {
-      setLocalLoading(true);
-      onResetFollowups(dateFilter);
+    setLocalLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      
+      // Determine which date filter to use
+      const filterToUse = customDate ? 'custom' : dateFilter;
+      const params = { 
+        date_filter: filterToUse, 
+        skip: 0, 
+        limit: 100 
+      };
+      
+      // Add custom_date if a date is selected
+      if (customDate) {
+        params.custom_date = customDate;
+      }
+      
+      // Fetch pending follow-ups
+      const pendingResponse = await axios.get(`${API}/followups/paginated`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params
+      });
+      
+      // Fetch completed follow-ups for the selected date
+      const completedResponse = await axios.get(`${API}/followups/completed`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params
+      });
+      
+      setFilteredFollowups(pendingResponse.data.followups || []);
+      setCompletedFollowups(completedResponse.data.followups || []);
+      
+      // Calculate statistics
+      const pending = pendingResponse.data.followups || [];
+      const completed = completedResponse.data.followups || [];
+      const overdue = pending.filter(f => f.status === 'overdue');
+      
+      setStatistics({
+        total: pending.length + completed.length,
+        completed: completed.length,
+        pending: pending.length,
+        overdue: overdue.length
+      });
+    } catch (error) {
+      console.error('Failed to fetch follow-ups:', error);
+    } finally {
       setLocalLoading(false);
     }
   };
 
   useEffect(() => {
-    if (dateFilter !== 'all') {
-      fetchFilteredFollowups();
-    }
-  }, [dateFilter]);
+    fetchFilteredFollowups();
+  }, [dateFilter, customDate]);
 
-  const displayFollowups = dateFilter === 'all' 
-    ? [...followups.overdue, ...followups.upcoming] 
-    : allFollowups;
+  const displayFollowups = activeTab === 'pending' ? filteredFollowups : completedFollowups;
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-3xl font-bold text-gray-800">Follow-ups Management</h2>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setDateFilter('all')}
-            className={`px-4 py-2 rounded-lg transition ${dateFilter === 'all' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-          >
-            All
-          </button>
-          <button
-            onClick={() => setDateFilter('today')}
-            className={`px-4 py-2 rounded-lg transition ${dateFilter === 'today' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-          >
-            Today
-          </button>
-          <button
-            onClick={() => setDateFilter('tomorrow')}
-            className={`px-4 py-2 rounded-lg transition ${dateFilter === 'tomorrow' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-          >
-            Tomorrow
-          </button>
-          <button
-            onClick={() => setDateFilter('this_week')}
-            className={`px-4 py-2 rounded-lg transition ${dateFilter === 'this_week' ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-          >
-            This Week
-          </button>
+      {/* Header with Date Filter */}
+      <div className="mb-6">
+        <h2 className="text-3xl font-bold text-gray-800 mb-4">Follow-ups Management</h2>
+        
+        {/* Date Filter Buttons and Custom Date Picker */}
+        <div className="space-y-3 mb-4">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => {
+                setDateFilter('today');
+                setCustomDate('');
+              }}
+              className={`px-4 py-2 rounded-lg transition font-medium ${dateFilter === 'today' && !customDate ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              📅 Today
+            </button>
+            <button
+              onClick={() => {
+                setDateFilter('tomorrow');
+                setCustomDate('');
+              }}
+              className={`px-4 py-2 rounded-lg transition font-medium ${dateFilter === 'tomorrow' && !customDate ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              📅 Tomorrow
+            </button>
+            <button
+              onClick={() => {
+                setDateFilter('this_week');
+                setCustomDate('');
+              }}
+              className={`px-4 py-2 rounded-lg transition font-medium ${dateFilter === 'this_week' && !customDate ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              📅 This Week
+            </button>
+            <button
+              onClick={() => {
+                setDateFilter('next_week');
+                setCustomDate('');
+              }}
+              className={`px-4 py-2 rounded-lg transition font-medium ${dateFilter === 'next_week' && !customDate ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              📅 Next Week
+            </button>
+          </div>
+          
+          {/* Custom Date Picker */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700">Or select a specific date:</label>
+            <input
+              type="date"
+              value={customDate}
+              onChange={(e) => setCustomDate(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            />
+            {customDate && (
+              <button
+                onClick={() => setCustomDate('')}
+                className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition text-sm"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+        
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white rounded-lg shadow-md p-4 border-l-4 border-blue-500">
+            <p className="text-sm text-gray-600 font-medium">Total Follow-ups</p>
+            <p className="text-3xl font-bold text-gray-800">{statistics.total}</p>
+          </div>
+          <div className="bg-white rounded-lg shadow-md p-4 border-l-4 border-green-500">
+            <p className="text-sm text-gray-600 font-medium">Completed</p>
+            <p className="text-3xl font-bold text-green-600">{statistics.completed}</p>
+          </div>
+          <div className="bg-white rounded-lg shadow-md p-4 border-l-4 border-yellow-500">
+            <p className="text-sm text-gray-600 font-medium">Pending</p>
+            <p className="text-3xl font-bold text-yellow-600">{statistics.pending}</p>
+          </div>
+          <div className="bg-white rounded-lg shadow-md p-4 border-l-4 border-red-500">
+            <p className="text-sm text-gray-600 font-medium">Overdue</p>
+            <p className="text-3xl font-bold text-red-600">{statistics.overdue}</p>
+          </div>
         </div>
       </div>
 
-      {loading ? (
-        <div className="text-center py-12 text-gray-600">Loading follow-ups...</div>
-      ) : (
-        <>
-          {dateFilter === 'all' && (
-            <>
-              {/* Overdue */}
-              <div className="mb-8">
-                <h3 className="text-xl font-bold text-red-600 mb-4">⚠️ Overdue ({followups.overdue.length})</h3>
-                {followups.overdue.length === 0 ? (
-                  <p className="text-gray-500">No overdue follow-ups</p>
-                ) : (
-                  <div className="grid gap-4">
-                    {followups.overdue.map(followup => (
-                      <div 
-                        key={followup.id} 
-                        className="bg-red-50 border border-red-200 rounded-lg p-4 cursor-pointer"
-                        onClick={() => openContactDetailModal(followup)}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <p className="font-bold text-lg text-gray-800">{getContactName(followup)}</p>
-                            <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
-                            <p className="text-sm text-red-600 font-medium mt-1">⏰ Due: {format12Hour(followup.follow_up_date)}</p>
-                            {followup.notes && <p className="text-sm text-gray-700 mt-2 italic">"{followup.notes}"</p>}
-                          </div>
-                          <div className="flex gap-2">
-                            <a
-                              href={`tel:${getContactPhone(followup)}`}
-                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold"
-                              title="Call Now"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              📞 Call
-                            </a>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openCompletionModal(followup);
-                              }}
-                              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold"
-                            >
-                              ✓ Complete
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+      {/* Tabs */}
+      <div className="bg-white rounded-lg shadow-md mb-6">
+        <div className="flex border-b">
+          <button
+            onClick={() => setActiveTab('pending')}
+            className={`flex-1 px-6 py-3 font-semibold transition ${
+              activeTab === 'pending' 
+                ? 'border-b-2 border-indigo-600 text-indigo-600' 
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            ⏰ Pending ({statistics.pending})
+          </button>
+          <button
+            onClick={() => setActiveTab('completed')}
+            className={`flex-1 px-6 py-3 font-semibold transition ${
+              activeTab === 'completed' 
+                ? 'border-b-2 border-green-600 text-green-600' 
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            ✅ Completed ({statistics.completed})
+          </button>
+        </div>
 
-              {/* Upcoming */}
-              <div>
-                <h3 className="text-xl font-bold text-indigo-600 mb-4">📅 Upcoming ({followups.upcoming.length})</h3>
-                {followups.upcoming.length === 0 ? (
-                  <p className="text-gray-500">No upcoming follow-ups</p>
-                ) : (
-                  <div className="grid gap-4">
-                    {followups.upcoming.map(followup => (
-                      <div 
-                        key={followup.id} 
-                        className="bg-blue-50 border border-blue-200 rounded-lg p-4 cursor-pointer"
-                        onClick={() => openContactDetailModal(followup)}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <p className="font-bold text-lg text-gray-800">{getContactName(followup)}</p>
-                            <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
-                            <p className="text-sm text-indigo-600 font-medium mt-1">⏰ Scheduled: {format12Hour(followup.follow_up_date)}</p>
-                            {followup.notes && <p className="text-sm text-gray-700 mt-2 italic">"{followup.notes}"</p>}
-                          </div>
-                          <div className="flex gap-2">
-                            <a
-                              href={`tel:${getContactPhone(followup)}`}
-                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold"
-                              title="Call Now"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              📞 Call
-                            </a>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openCompletionModal(followup);
-                              }}
-                              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold"
-                            >
-                              ✓ Complete
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+        {/* Tab Content */}
+        <div className="p-6">
+          {localLoading ? (
+            <div className="text-center py-12 text-gray-600">
+              <div className="inline-flex items-center">
+                <svg className="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span className="ml-3 text-lg">Loading follow-ups...</span>
               </div>
-            </>
-          )}
-
-          {dateFilter !== 'all' && (
-            <div>
-              <h3 className="text-xl font-bold text-indigo-600 mb-4">
-                {dateFilter === 'today' && '📅 Today\'s Follow-ups'}
-                {dateFilter === 'tomorrow' && '📅 Tomorrow\'s Follow-ups'}
-                {dateFilter === 'this_week' && '📅 This Week\'s Follow-ups'}
-                {' '}({displayFollowups.length})
-              </h3>
-              {displayFollowups.length === 0 && !loading && !localLoading ? (
-                <p className="text-gray-500">No follow-ups found for this period</p>
-              ) : (
-                <div className="grid gap-4">
-                  {displayFollowups.map(followup => {
-                    const isOverdue = followup.status === 'overdue';
-                    return (
-                      <div 
-                        key={followup.id} 
-                        className={`${isOverdue ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'} border rounded-lg p-4 cursor-pointer`}
-                        onClick={() => openContactDetailModal(followup)}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <p className="font-bold text-lg text-gray-800">{getContactName(followup)}</p>
-                            <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
-                            <p className={`text-sm font-medium mt-1 ${isOverdue ? 'text-red-600' : 'text-indigo-600'}`}>
-                              ⏰ {isOverdue ? 'Overdue:' : 'Scheduled:'} {format12Hour(followup.follow_up_date)}
-                            </p>
-                            {followup.notes && <p className="text-sm text-gray-700 mt-2 italic">"{followup.notes}"</p>}
-                          </div>
-                          <div className="flex gap-2">
-                            <a
-                              href={`tel:${getContactPhone(followup)}`}
-                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold"
-                              title="Call Now"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              📞 Call
-                            </a>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openCompletionModal(followup);
-                              }}
-                              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold"
-                            >
-                              ✓ Complete
-                            </button>
-                          </div>
-                        </div>
+            </div>
+          ) : displayFollowups.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-gray-500 text-lg">
+                {activeTab === 'pending' 
+                  ? `No pending follow-ups for ${customDate ? new Date(customDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : dateFilter === 'today' ? 'today' : dateFilter === 'tomorrow' ? 'tomorrow' : dateFilter === 'this_week' ? 'this week' : 'next week'}`
+                  : `No completed follow-ups for ${customDate ? new Date(customDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : dateFilter === 'today' ? 'today' : dateFilter === 'tomorrow' ? 'tomorrow' : dateFilter === 'this_week' ? 'this week' : 'next week'}`
+                }
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {displayFollowups.map(followup => {
+                const isOverdue = followup.status === 'overdue';
+                const isCompleted = followup.status === 'completed';
+                
+                return (
+                  <div 
+                    key={followup.id} 
+                    className={`${
+                      isCompleted ? 'bg-green-50 border-green-200' :
+                      isOverdue ? 'bg-red-50 border-red-200' : 
+                      'bg-blue-50 border-blue-200'
+                    } border-2 rounded-lg p-4 cursor-pointer hover:shadow-md transition`}
+                    onClick={() => openContactDetailModal(followup)}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <p className="font-bold text-lg text-gray-800">{getContactName(followup)}</p>
+                        <p className="text-sm text-gray-600 mt-1">📞 {getContactPhone(followup)}</p>
+                        {followup.contact?.assigned_staff && (
+                          <p className="text-sm text-indigo-600 mt-1 font-medium">
+                            👤 Staff: {followup.contact.assigned_staff}
+                          </p>
+                        )}
+                        <p className={`text-sm font-medium mt-1 ${
+                          isCompleted ? 'text-green-600' :
+                          isOverdue ? 'text-red-600' : 
+                          'text-indigo-600'
+                        }`}>
+                          ⏰ {isCompleted ? 'Completed:' : isOverdue ? 'Overdue:' : 'Scheduled:'} {format12Hour(followup.follow_up_date)}
+                        </p>
+                        {followup.notes && (
+                          <p className="text-sm text-gray-700 mt-2 italic bg-white bg-opacity-50 p-2 rounded">
+                            "{followup.notes}"
+                          </p>
+                        )}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-              
-              {/* Loading indicator for filtered followups */}
-              {dateFilter !== 'all' && loading && (
-                <div className="text-center py-4">
-                  <div className="inline-flex items-center px-4 py-2 font-semibold leading-6 text-sm shadow rounded-md text-white bg-indigo-500">
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="m4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Loading more follow-ups...
+                      {!isCompleted && (
+                        <div className="flex gap-2 ml-4">
+                          <a
+                            href={`tel:${getContactPhone(followup)}`}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold whitespace-nowrap"
+                            title="Call Now"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            📞 Call
+                          </a>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openCompletionModal(followup);
+                            }}
+                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold whitespace-nowrap"
+                          >
+                            ✓ Complete
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
-              
-              {/* End of list indicator for filtered followups */}
-              {dateFilter !== 'all' && !hasMore && displayFollowups.length > 0 && (
-                <div className="text-center py-4 text-gray-500">
-                  No more follow-ups to load
-                </div>
-              )}
+                );
+              })}
             </div>
           )}
-        </>
-      )}
+        </div>
+      </div>
       
       {/* Follow-up Completion Modal */}
       {showCompletionModal && selectedFollowup && (
@@ -4841,6 +4885,787 @@ const ContactFormModal = ({ onClose, onSave }) => {
           >
             Add Contact
           </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// Productivity View (Admin Only)
+const ProductivityView = () => {
+  const [dateRange, setDateRange] = useState('today');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  const [staffData, setStaffData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedStaff, setSelectedStaff] = useState(null);
+  const [selectedMetric, setSelectedMetric] = useState(null);
+  const [detailsData, setDetailsData] = useState([]);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+
+  const getDateRange = () => {
+    const now = new Date();
+    let start, end;
+
+    if (dateRange === 'today') {
+      start = new Date(now.setHours(0, 0, 0, 0));
+      end = new Date(now.setHours(23, 59, 59, 999));
+    } else if (dateRange === 'yesterday') {
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      start = new Date(yesterday.setHours(0, 0, 0, 0));
+      end = new Date(yesterday.setHours(23, 59, 59, 999));
+    } else if (dateRange === 'this_week') {
+      const firstDay = now.getDate() - now.getDay();
+      start = new Date(now.setDate(firstDay));
+      start.setHours(0, 0, 0, 0);
+      end = new Date();
+    } else if (dateRange === 'this_month') {
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end = new Date();
+    } else if (dateRange === 'custom') {
+      start = customStartDate ? new Date(customStartDate) : new Date();
+      end = customEndDate ? new Date(customEndDate) : new Date();
+      end.setHours(23, 59, 59, 999);
+    }
+
+    return { start: start.toISOString(), end: end.toISOString() };
+  };
+
+  const fetchProductivityData = async () => {
+    setLoading(true);
+    try {
+      const { start, end } = getDateRange();
+      const response = await axios.get(`${API}/productivity/staff-summary`, {
+        params: { start_date: start, end_date: end }
+      });
+      setStaffData(response.data);
+    } catch (error) {
+      console.error('Failed to fetch productivity data:', error);
+      alert('Failed to load productivity data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchMetricDetails = async (userId, userName, metric) => {
+    setDetailsLoading(true);
+    setSelectedStaff(userName);
+    setSelectedMetric(metric);
+    setShowDetailsModal(true);
+    try {
+      const { start, end } = getDateRange();
+      const response = await axios.get(`${API}/productivity/staff-details`, {
+        params: {
+          user_id: userId,
+          metric_type: metric,
+          start_date: start,
+          end_date: end
+        }
+      });
+      setDetailsData(response.data.data);
+    } catch (error) {
+      console.error('Failed to fetch metric details:', error);
+      alert('Failed to load details');
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProductivityData();
+  }, [dateRange, customStartDate, customEndDate]);
+
+  const getMetricLabel = (metric) => {
+    const labels = {
+      followups: 'Follow-ups',
+      demos: 'Demos',
+      meetings: 'Meetings',
+      calls: 'Fresh Calls'
+    };
+    return labels[metric] || metric;
+  };
+
+  return (
+    <div>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+        <h2 className="text-3xl font-bold text-gray-800">Staff Productivity</h2>
+      </div>
+
+      {/* Date Range Filters */}
+      <div className="bg-white rounded-xl shadow-md p-4 mb-6">
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setDateRange('today')}
+              className={`px-4 py-2 rounded-lg transition font-medium ${
+                dateRange === 'today'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              📅 Today
+            </button>
+            <button
+              onClick={() => setDateRange('yesterday')}
+              className={`px-4 py-2 rounded-lg transition font-medium ${
+                dateRange === 'yesterday'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              📅 Yesterday
+            </button>
+            <button
+              onClick={() => setDateRange('this_week')}
+              className={`px-4 py-2 rounded-lg transition font-medium ${
+                dateRange === 'this_week'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              📅 This Week
+            </button>
+            <button
+              onClick={() => setDateRange('this_month')}
+              className={`px-4 py-2 rounded-lg transition font-medium ${
+                dateRange === 'this_month'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              📅 This Month
+            </button>
+            <button
+              onClick={() => setDateRange('custom')}
+              className={`px-4 py-2 rounded-lg transition font-medium ${
+                dateRange === 'custom'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              📅 Custom Range
+            </button>
+          </div>
+
+          {dateRange === 'custom' && (
+            <div className="flex flex-wrap gap-2 items-center">
+              <div>
+                <label className="text-sm font-medium text-gray-700 mr-2">From:</label>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 mr-2">To:</label>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Staff Productivity Table */}
+      {loading ? (
+        <div className="bg-white rounded-xl shadow-md p-12 text-center">
+          <div className="inline-flex items-center">
+            <svg className="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span className="ml-3 text-lg text-gray-600">Loading productivity data...</span>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-md overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Staff Member</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Fresh Calls</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Follow-ups Created</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Follow-ups Completed</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Demos Given</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Demos Watched</th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Meetings</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {staffData.map((staff) => (
+                  <tr key={staff.user_id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">{staff.user_name}</div>
+                          <div className="text-xs text-gray-500">{staff.user_email}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                        staff.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {staff.role === 'admin' ? '👑 Admin' : '👤 Staff'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <button
+                        onClick={() => fetchMetricDetails(staff.user_id, staff.user_name, 'calls')}
+                        className="text-lg font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+                      >
+                        {staff.fresh_calls}
+                      </button>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <button
+                        onClick={() => fetchMetricDetails(staff.user_id, staff.user_name, 'followups')}
+                        className="text-lg font-semibold text-green-600 hover:text-green-800 hover:underline"
+                      >
+                        {staff.followups_created}
+                      </button>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <span className="text-lg font-semibold text-teal-600">
+                        {staff.followups_completed}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <button
+                        onClick={() => fetchMetricDetails(staff.user_id, staff.user_name, 'demos')}
+                        className="text-lg font-semibold text-orange-600 hover:text-orange-800 hover:underline"
+                      >
+                        {staff.demos_given}
+                      </button>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <span className="text-lg font-semibold text-indigo-600">
+                        {staff.demos_watched}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <button
+                        onClick={() => fetchMetricDetails(staff.user_id, staff.user_name, 'meetings')}
+                        className="text-lg font-semibold text-purple-600 hover:text-purple-800 hover:underline"
+                      >
+                        {staff.meetings_created}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {staffData.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              No productivity data available for the selected period.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Details Modal */}
+      {showDetailsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-hidden">
+            <div className="border-b px-6 py-4 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-800">
+                {selectedStaff} - {getMetricLabel(selectedMetric)}
+              </h2>
+              <button
+                onClick={() => setShowDetailsModal(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
+              {detailsLoading ? (
+                <div className="text-center py-12">
+                  <div className="inline-flex items-center">
+                    <svg className="animate-spin h-8 w-8 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span className="ml-3 text-lg text-gray-600">Loading details...</span>
+                  </div>
+                </div>
+              ) : detailsData.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  No data available
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {selectedMetric === 'followups' && detailsData.map((item, index) => (
+                    <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-900">
+                            {item.contact?.customer_name || item.contact?.data?.shop_name || 'Unknown'}
+                          </p>
+                          <p className="text-sm text-gray-600">📞 {item.contact?.phone || 'N/A'}</p>
+                          <p className="text-sm text-gray-600">Due: {format12Hour(item.follow_up_date)}</p>
+                          {item.notes && <p className="text-sm text-gray-500 mt-1 italic">"{item.notes}"</p>}
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          item.status === 'completed' ? 'bg-green-100 text-green-800' :
+                          item.status === 'overdue' ? 'bg-red-100 text-red-800' :
+                          'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {item.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {selectedMetric === 'demos' && detailsData.map((item, index) => (
+                    <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-900">
+                            {item.contact?.customer_name || item.contact?.data?.shop_name || 'Unknown'}
+                          </p>
+                          <p className="text-sm text-gray-600">📞 {item.contact?.phone || 'N/A'}</p>
+                          <p className="text-sm text-gray-600">Given: {format12Hour(item.given_at)}</p>
+                          {item.notes && <p className="text-sm text-gray-500 mt-1 italic">"{item.notes}"</p>}
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          item.watched ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {item.watched ? '✓ Watched' : 'Not Watched'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {selectedMetric === 'meetings' && detailsData.map((item, index) => (
+                    <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-900">{item.title}</p>
+                          <p className="text-sm text-gray-600">📅 {item.date} {item.time && `at ${item.time}`}</p>
+                          {item.location && <p className="text-sm text-gray-600">📍 {item.location}</p>}
+                          {item.notes && <p className="text-sm text-gray-500 mt-1 italic">"{item.notes}"</p>}
+                          {item.attendees && item.attendees.length > 0 && (
+                            <p className="text-sm text-gray-600 mt-1">
+                              👥 {item.attendees.length} attendee(s)
+                            </p>
+                          )}
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          item.status === 'completed' ? 'bg-green-100 text-green-800' :
+                          item.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                          'bg-blue-100 text-blue-800'
+                        }`}>
+                          {item.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+
+                  {selectedMetric === 'calls' && detailsData.map((item, index) => (
+                    <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-900">
+                            {item.contact?.customer_name || item.contact?.data?.shop_name || item.contact?.data?.Shop_Name || 'Unknown Customer'}
+                          </p>
+                          <p className="text-sm text-gray-600">📞 {item.contact?.phone || item.target || 'N/A'}</p>
+                          <p className="text-sm text-gray-600">Time: {format12Hour(item.timestamp)}</p>
+                          {item.contact?.data?.shop_name && item.contact.customer_name && (
+                            <p className="text-sm text-gray-500 mt-1">🏪 {item.contact.data.shop_name}</p>
+                          )}
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          item.contact?.status === 'Called' ? 'bg-blue-100 text-blue-800' :
+                          item.contact?.status === 'Follow Up' ? 'bg-yellow-100 text-yellow-800' :
+                          item.contact?.status === 'Interested' ? 'bg-green-100 text-green-800' :
+                          item.contact?.status === 'Not Interested' ? 'bg-red-100 text-red-800' :
+                          item.contact?.status === 'Closed' ? 'bg-purple-100 text-purple-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {item.contact?.status || 'Unknown'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Users Management View (Admin Only)
+const UsersView = () => {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [showRoleModal, setShowRoleModal] = useState(false);
+  
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get(`${API}/users`);
+      setUsers(response.data);
+    } catch (error) {
+      console.error('Failed to fetch users:', error);
+      alert('Failed to load users');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+  
+  const handleDeleteUser = async (userId) => {
+    if (!window.confirm('Are you sure you want to delete this user?')) return;
+    
+    try {
+      await axios.delete(`${API}/users/${userId}`);
+      alert('User deleted successfully');
+      fetchUsers();
+    } catch (error) {
+      alert(error.response?.data?.detail || 'Failed to delete user');
+    }
+  };
+  
+  const handleUpdateRole = async (userId, newRole) => {
+    try {
+      await axios.put(`${API}/users/${userId}/role`, { role: newRole });
+      alert('User role updated successfully');
+      fetchUsers();
+      setShowRoleModal(false);
+      setSelectedUser(null);
+    } catch (error) {
+      alert(error.response?.data?.detail || 'Failed to update role');
+    }
+  };
+  
+  const getRoleBadgeColor = (role) => {
+    switch(role) {
+      case 'admin': return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'staff': return 'bg-blue-100 text-blue-800 border-blue-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+  
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+  
+  return (
+    <div>
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+        <h2 className="text-2xl lg:text-3xl font-bold text-gray-800">User Management</h2>
+        <button
+          onClick={() => {
+            setSelectedUser(null);
+            setShowUserModal(true);
+          }}
+          className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold touch-manipulation"
+        >
+          + Add User
+        </button>
+      </div>
+      
+      <div className="bg-white rounded-xl shadow-md overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {users.map(user => (
+                <tr key={user.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900">{user.email}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full border ${getRoleBadgeColor(user.role)}`}>
+                      {user.role === 'admin' ? '👑 Admin' : '👤 Staff'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {format12Hour(user.created_at)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <button
+                      onClick={() => {
+                        setSelectedUser(user);
+                        setShowRoleModal(true);
+                      }}
+                      className="text-indigo-600 hover:text-indigo-900 mr-4"
+                    >
+                      Change Role
+                    </button>
+                    <button
+                      onClick={() => handleDeleteUser(user.id)}
+                      className="text-red-600 hover:text-red-900"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        
+        {users.length === 0 && (
+          <div className="text-center py-12 text-gray-500">
+            No users found. Add users to get started.
+          </div>
+        )}
+      </div>
+      
+      {/* Create User Modal */}
+      {showUserModal && (
+        <UserFormModal
+          onClose={() => setShowUserModal(false)}
+          onSave={async (userData) => {
+            try {
+              await axios.post(`${API}/users`, userData);
+              alert('User created successfully');
+              fetchUsers();
+              setShowUserModal(false);
+            } catch (error) {
+              alert(error.response?.data?.detail || 'Failed to create user');
+            }
+          }}
+        />
+      )}
+      
+      {/* Change Role Modal */}
+      {showRoleModal && selectedUser && (
+        <RoleChangeModal
+          user={selectedUser}
+          onClose={() => {
+            setShowRoleModal(false);
+            setSelectedUser(null);
+          }}
+          onSave={(newRole) => handleUpdateRole(selectedUser.id, newRole)}
+        />
+      )}
+    </div>
+  );
+};
+
+// User Form Modal
+const UserFormModal = ({ onClose, onSave }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState('staff');
+  const [errors, setErrors] = useState({});
+  const [showPassword, setShowPassword] = useState(false);
+  
+  const validate = () => {
+    const newErrors = {};
+    if (!email.trim()) newErrors.email = 'Email is required';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) newErrors.email = 'Invalid email format';
+    if (!password.trim()) newErrors.password = 'Password is required';
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+  
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (validate()) {
+      onSave({ email, password, role });
+    }
+  };
+  
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-bold text-gray-800">Create New User</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            ✕
+          </button>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 ${
+                errors.email ? 'border-red-500' : 'border-gray-300'
+              }`}
+              placeholder="user@example.com"
+            />
+            {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Password *</label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={`w-full px-3 py-2 pr-10 border rounded-lg focus:ring-2 focus:ring-indigo-500 ${
+                  errors.password ? 'border-red-500' : 'border-gray-300'
+                }`}
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+              >
+                {showPassword ? (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                )}
+              </button>
+            </div>
+            {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="staff">👤 Staff</option>
+              <option value="admin">👑 Admin</option>
+            </select>
+          </div>
+          
+          <div className="flex gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
+            >
+              Create User
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// Role Change Modal
+const RoleChangeModal = ({ user, onClose, onSave }) => {
+  const [selectedRole, setSelectedRole] = useState(user.role);
+  
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave(selectedRole);
+  };
+  
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-bold text-gray-800">Change User Role</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            ✕
+          </button>
+        </div>
+        
+        <div className="mb-4">
+          <p className="text-sm text-gray-600">User: <span className="font-medium text-gray-800">{user.email}</span></p>
+          <p className="text-sm text-gray-600 mt-1">Current Role: <span className={`font-medium ${
+            user.role === 'admin' ? 'text-purple-600' : 'text-blue-600'
+          }`}>{user.role === 'admin' ? '👑 Admin' : '👤 Staff'}</span></p>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">New Role</label>
+            <div className="space-y-2">
+              <label className="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
+                <input
+                  type="radio"
+                  value="staff"
+                  checked={selectedRole === 'staff'}
+                  onChange={(e) => setSelectedRole(e.target.value)}
+                  className="mr-3"
+                />
+                <div>
+                  <div className="font-medium">👤 Staff</div>
+                  <div className="text-xs text-gray-500">Can manage contacts, follow-ups, and meetings</div>
+                </div>
+              </label>
+              <label className="flex items-center p-3 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50">
+                <input
+                  type="radio"
+                  value="admin"
+                  checked={selectedRole === 'admin'}
+                  onChange={(e) => setSelectedRole(e.target.value)}
+                  className="mr-3"
+                />
+                <div>
+                  <div className="font-medium">👑 Admin</div>
+                  <div className="text-xs text-gray-500">Full access including user management</div>
+                </div>
+              </label>
+            </div>
+          </div>
+          
+          <div className="flex gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
+              disabled={selectedRole === user.role}
+            >
+              Update Role
+            </button>
+          </div>
         </form>
       </div>
     </div>

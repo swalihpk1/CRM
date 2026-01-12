@@ -47,11 +47,13 @@ class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     email: EmailStr
+    role: str = "staff"  # staff, admin
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 class UserSignup(BaseModel):
     email: EmailStr
     password: str
+    role: Optional[str] = "staff"  # Only admins can set this during creation
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -63,6 +65,8 @@ class Contact(BaseModel):
     phone: str
     customer_name: Optional[str] = None
     status: str = "None"
+    assigned_staff: Optional[str] = None  # Staff member name who claimed this contact
+    assigned_staff_id: Optional[str] = None  # Staff member ID
     data: Dict[str, Any] = {}  # Flexible schema for other columns
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -194,6 +198,40 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=401, detail="User not found")
     return user
 
+async def get_admin_user(current_user: dict = Depends(get_current_user)) -> dict:
+    """Dependency to ensure user is an admin"""
+    if current_user.get('role') != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
+async def get_staff_or_admin(current_user: dict = Depends(get_current_user)) -> dict:
+    """Dependency to ensure user is staff or admin"""
+    if current_user.get('role') not in ['staff', 'admin']:
+        raise HTTPException(status_code=403, detail="Staff or admin access required")
+    return current_user
+
+def normalize_phone(phone: str) -> str:
+    """
+    Normalize phone number by removing spaces, special characters, and country code.
+    Returns the last 10 digits for comparison.
+    Examples:
+    - +91 1234567890 -> 1234567890
+    - 123 4567 890 -> 1234567890
+    - +911234567890 -> 1234567890
+    """
+    if not phone:
+        return ""
+    
+    # Remove all non-digit characters
+    digits_only = ''.join(filter(str.isdigit, phone))
+    
+    # Return last 10 digits (assuming standard mobile number length)
+    # This handles country codes like +91
+    if len(digits_only) > 10:
+        return digits_only[-10:]
+    
+    return digits_only
+
 async def log_activity(user_id: str, user_email: str, action: str, target: Optional[str] = None, details: Optional[str] = None):
     log = ActivityLog(
         user_id=user_id,
@@ -238,13 +276,24 @@ async def send_email_notification(to_email: str, subject: str, body: str):
 
 @api_router.post("/auth/signup")
 async def signup(user_data: UserSignup):
+    # Check if this is the first user (only allow signup for first user)
+    user_count = await db.users.count_documents({})
+    if user_count > 0:
+        raise HTTPException(
+            status_code=403, 
+            detail="Public signup is disabled. Please contact an administrator to create an account."
+        )
+    
     # Check if user exists
     existing_user = await db.users.find_one({"email": user_data.email})
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     
+    # First user is always admin
+    role = "admin"
+    
     # Create user
-    user = User(email=user_data.email)
+    user = User(email=user_data.email, role=role)
     user_doc = user.model_dump()
     user_doc['password'] = hash_password(user_data.password)
     
@@ -256,7 +305,7 @@ async def signup(user_data: UserSignup):
     return {
         "message": "User created successfully",
         "token": token,
-        "user": {"id": user.id, "email": user.email}
+        "user": {"id": user.id, "email": user.email, "role": user.role}
     }
 
 @api_router.post("/auth/login")
@@ -276,12 +325,112 @@ async def login(credentials: UserLogin):
     return {
         "message": "Login successful",
         "token": token,
-        "user": {"id": user['id'], "email": user['email']}
+        "user": {"id": user['id'], "email": user['email'], "role": user.get('role', 'staff')}
     }
 
 @api_router.get("/auth/me")
 async def get_me(current_user: dict = Depends(get_current_user)):
-    return {"id": current_user['id'], "email": current_user['email']}
+    return {"id": current_user['id'], "email": current_user['email'], "role": current_user.get('role', 'staff')}
+
+# ============ USER MANAGEMENT ROUTES (ADMIN ONLY) ============
+
+class UserRoleUpdate(BaseModel):
+    role: str
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
+    role: str = "staff"
+
+@api_router.get("/users")
+async def get_all_users(admin_user: dict = Depends(get_admin_user)):
+    """Get all users (admin only)"""
+    users = await db.users.find({}, {"_id": 0, "password": 0}).to_list(None)
+    return users
+
+@api_router.post("/users")
+async def create_user(user_data: UserCreate, admin_user: dict = Depends(get_admin_user)):
+    """Create a new user (admin only)"""
+    # Check if user exists
+    existing_user = await db.users.find_one({"email": user_data.email})
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Validate role
+    if user_data.role not in ["staff", "admin"]:
+        raise HTTPException(status_code=400, detail="Invalid role. Must be 'staff' or 'admin'")
+    
+    # Create user
+    user = User(email=user_data.email, role=user_data.role)
+    user_doc = user.model_dump()
+    user_doc['password'] = hash_password(user_data.password)
+    
+    await db.users.insert_one(user_doc)
+    
+    await log_activity(
+        admin_user['id'],
+        admin_user['email'],
+        "Created user",
+        target=user.email,
+        details=f"Role: {user.role}"
+    )
+    
+    return {
+        "message": "User created successfully",
+        "user": {"id": user.id, "email": user.email, "role": user.role}
+    }
+
+@api_router.put("/users/{user_id}/role")
+async def update_user_role(user_id: str, role_update: UserRoleUpdate, admin_user: dict = Depends(get_admin_user)):
+    """Update a user's role (admin only)"""
+    # Validate role
+    if role_update.role not in ["staff", "admin"]:
+        raise HTTPException(status_code=400, detail="Invalid role. Must be 'staff' or 'admin'")
+    
+    # Check if user exists
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Prevent admin from demoting themselves
+    if user_id == admin_user['id'] and role_update.role != "admin":
+        raise HTTPException(status_code=400, detail="Cannot demote yourself")
+    
+    await db.users.update_one({"id": user_id}, {"$set": {"role": role_update.role}})
+    
+    await log_activity(
+        admin_user['id'],
+        admin_user['email'],
+        "Updated user role",
+        target=user['email'],
+        details=f"From {user.get('role', 'staff')} to {role_update.role}"
+    )
+    
+    return {"message": "User role updated successfully"}
+
+@api_router.delete("/users/{user_id}")
+async def delete_user(user_id: str, admin_user: dict = Depends(get_admin_user)):
+    """Delete a user (admin only)"""
+    # Check if user exists
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Prevent admin from deleting themselves
+    if user_id == admin_user['id']:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+    
+    await db.users.delete_one({"id": user_id})
+    
+    await log_activity(
+        admin_user['id'],
+        admin_user['email'],
+        "Deleted user",
+        target=user['email'],
+        details=f"Role: {user.get('role', 'staff')}"
+    )
+    
+    return {"message": "User deleted successfully"}
 
 # ============ CONTACT ROUTES ============
 
@@ -305,15 +454,32 @@ async def import_contacts(
         # Read Excel file
         contents = await file.read()
         try:
-            df = pd.read_excel(io.BytesIO(contents), engine='openpyxl', dtype=str, na_filter=False)
+            df = pd.read_excel(io.BytesIO(contents), engine='openpyxl', dtype=str, na_filter=False, header=0)
         except:
             try:
-                df = pd.read_excel(io.BytesIO(contents), engine='xlrd', dtype=str, na_filter=False)
+                df = pd.read_excel(io.BytesIO(contents), engine='xlrd', dtype=str, na_filter=False, header=0)
             except:
-                df = pd.read_excel(io.BytesIO(contents), dtype=str, na_filter=False)
+                df = pd.read_excel(io.BytesIO(contents), dtype=str, na_filter=False, header=0)
         
-        # Clean up column names
+        # Clean up column names and handle unnamed columns
         df.columns = df.columns.str.strip()
+        
+        # Replace 'Unnamed: X' columns with more descriptive names or skip them
+        new_columns = []
+        for i, col in enumerate(df.columns):
+            if str(col).startswith('Unnamed:'):
+                # Check if this column has any data
+                if df[col].notna().any() and df[col].astype(str).str.strip().ne('').any():
+                    new_columns.append(f'Column_{i+1}')
+                else:
+                    new_columns.append(col)  # Keep unnamed if empty
+            else:
+                new_columns.append(col)
+        df.columns = new_columns
+        
+        # Remove completely empty columns
+        df = df.dropna(axis=1, how='all')
+        df = df.loc[:, (df != '').any(axis=0)]
         
         # Debug
         print(f"\n=== IMPORT DEBUG ===")
@@ -323,19 +489,22 @@ async def import_contacts(
         print(f"Phone 2 column: {phone2_column}")
         print(f"Total rows in Excel: {len(df)}")
         
+        # Store original count before any processing
+        original_count = len(df)
+        
         # Replace empty values
         df = df.replace(["", " ", "N/A", "n/a", "NA", "na", "NULL", "null", "None", "none"], pd.NA)
         
-        # Remove duplicates based on phone columns
-        duplicate_columns = []
+        # Remove duplicates based on phone columns (normalize before comparison)
         if phone_column and phone_column in df.columns:
-            duplicate_columns.append(phone_column)
-        
-        original_count = len(df)
-        if duplicate_columns:
-            df = df.drop_duplicates(subset=duplicate_columns, keep="first")
+            # Create a normalized phone column for duplicate detection
+            df['_normalized_phone'] = df[phone_column].apply(lambda x: normalize_phone(str(x)) if pd.notna(x) else "")
+            # Remove rows where normalized phone is empty
+            df = df[df['_normalized_phone'] != ""]
+            # Remove duplicates based on normalized phone
+            df = df.drop_duplicates(subset=['_normalized_phone'], keep="first")
             file_duplicates_removed = original_count - len(df)
-            print(f"Removed {file_duplicates_removed} duplicate rows from Excel file")
+            print(f"Removed {file_duplicates_removed} duplicate rows from Excel file based on normalized phone numbers")
         else:
             file_duplicates_removed = 0
         
@@ -393,12 +562,24 @@ async def import_contacts(
                 else:
                     phone = f"contact_{processed_count}"
             
-            # Check for duplicates in database
-            existing = await db.contacts.find_one({"phone": phone})
-            if existing:
-                db_duplicates_count += 1
-                skipped_count += 1
-                continue
+            # Normalize phone for duplicate checking
+            normalized_phone = normalize_phone(phone)
+            
+            # Check for duplicates in database using normalized phone
+            # Get all contacts and check normalized versions
+            if normalized_phone:
+                existing_contacts = await db.contacts.find({}, {"_id": 0, "phone": 1}).to_list(None)
+                is_duplicate = False
+                for existing in existing_contacts:
+                    if normalize_phone(existing.get("phone", "")) == normalized_phone:
+                        is_duplicate = True
+                        break
+                
+                if is_duplicate:
+                    db_duplicates_count += 1
+                    skipped_count += 1
+                    print(f"Skipped duplicate: {phone} (normalized: {normalized_phone})")
+                    continue
             
             # Skip if no meaningful contact data
             if not contact_data:
@@ -463,15 +644,32 @@ async def preview_excel(
         contents = await file.read()
         # Read with proper encoding and data handling
         try:
-            df = pd.read_excel(io.BytesIO(contents), nrows=5, engine='openpyxl', dtype=str, na_filter=False)
+            df = pd.read_excel(io.BytesIO(contents), nrows=5, engine='openpyxl', dtype=str, na_filter=False, header=0)
         except:
             try:
-                df = pd.read_excel(io.BytesIO(contents), nrows=5, engine='xlrd', dtype=str, na_filter=False)
+                df = pd.read_excel(io.BytesIO(contents), nrows=5, engine='xlrd', dtype=str, na_filter=False, header=0)
             except:
-                df = pd.read_excel(io.BytesIO(contents), nrows=5, dtype=str, na_filter=False)
+                df = pd.read_excel(io.BytesIO(contents), nrows=5, dtype=str, na_filter=False, header=0)
         
-        # Clean up column names
+        # Clean up column names and handle unnamed columns
         df.columns = df.columns.str.strip()
+        
+        # Replace 'Unnamed: X' columns with more descriptive names
+        new_columns = []
+        for i, col in enumerate(df.columns):
+            if str(col).startswith('Unnamed:'):
+                # Check if this column has any data
+                if df[col].notna().any() and df[col].astype(str).str.strip().ne('').any():
+                    new_columns.append(f'Column_{i+1}')
+                else:
+                    new_columns.append(col)  # Keep unnamed if empty
+            else:
+                new_columns.append(col)
+        df.columns = new_columns
+        
+        # Remove completely empty columns
+        df = df.dropna(axis=1, how='all')
+        df = df.loc[:, (df != '').any(axis=0)]
         
         # Clean up data for preview
         df = df.replace(['', ' ', 'N/A', 'n/a', 'NA', 'na', 'NULL', 'null', 'None', 'none'], None)
@@ -525,11 +723,39 @@ async def get_contacts(
         # Log the search query for debugging
         print(f"Searching for: {search}")
         
+        # Normalize the search term if it looks like a phone number (contains digits)
+        search_digits = ''.join(filter(str.isdigit, search))
+        
         # Build a comprehensive search query
         search_conditions = [
-            {"phone": {"$regex": search, "$options": "i"}},
             {"customer_name": {"$regex": search, "$options": "i"}},
         ]
+        
+        # If search contains digits, do phone number matching
+        if search_digits:
+            # Get all contacts and filter by phone number matching
+            all_contacts = await db.contacts.find({}, {"_id": 0, "id": 1, "phone": 1, "customer_name": 1, "status": 1, "data": 1, "assigned_staff": 1, "assigned_staff_id": 1, "created_at": 1, "updated_at": 1, "last_call_at": 1}).to_list(None)
+            matching_contact_ids = []
+            
+            for contact in all_contacts:
+                phone = contact.get("phone", "")
+                # Remove all non-digit characters from phone for comparison
+                phone_digits = ''.join(filter(str.isdigit, phone))
+                # Check if search digits are contained in phone digits
+                if search_digits in phone_digits:
+                    matching_contact_ids.append(contact.get("id"))
+            
+            # If we found matching phones, add them to query
+            if matching_contact_ids:
+                if status:
+                    query = {"id": {"$in": matching_contact_ids}, "status": status}
+                else:
+                    query = {"id": {"$in": matching_contact_ids}}
+                
+                # Apply pagination and return
+                contacts = await db.contacts.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+                print(f"Found {len(contacts)} contacts by phone search")
+                return contacts
         
         # Search in all possible nested data field variations
         data_fields = [
@@ -609,10 +835,17 @@ async def create_contact(
     contact_data: ContactCreate,
     current_user: dict = Depends(get_current_user)
 ):
-    # Check for duplicate
-    existing = await db.contacts.find_one({"phone": contact_data.phone})
-    if existing:
-        raise HTTPException(status_code=400, detail="Contact with this phone number already exists")
+    # Check for duplicate using normalized phone number
+    normalized_new_phone = normalize_phone(contact_data.phone)
+    
+    if normalized_new_phone:
+        existing_contacts = await db.contacts.find({}, {"_id": 0, "phone": 1}).to_list(None)
+        for existing in existing_contacts:
+            if normalize_phone(existing.get("phone", "")) == normalized_new_phone:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Contact with this phone number already exists (found: {existing.get('phone')})"
+                )
     
     contact = Contact(**contact_data.model_dump())
     await db.contacts.insert_one(contact.model_dump())
@@ -662,6 +895,18 @@ async def update_contact(
     
     update_data = {k: v for k, v in updates.model_dump().items() if v is not None}
     update_data['updated_at'] = datetime.now(timezone.utc).isoformat()
+    
+    # Auto-assign staff when status changes from "None" to anything else
+    if 'status' in update_data:
+        old_status = contact.get('status', 'None')
+        new_status = update_data['status']
+        
+        # If changing from "None" to any other status and not yet assigned
+        if old_status == 'None' and new_status != 'None' and not contact.get('assigned_staff'):
+            # Extract name from email (part before @)
+            staff_name = current_user['email'].split('@')[0]
+            update_data['assigned_staff'] = staff_name
+            update_data['assigned_staff_id'] = current_user['id']
     
     await db.contacts.update_one({"id": contact_id}, {"$set": update_data})
     
@@ -814,6 +1059,11 @@ async def get_followups(
     current_user: dict = Depends(get_current_user)
 ):
     query = {}
+    
+    # Staff members only see their own follow-ups, admins see all
+    if current_user.get('role') != 'admin':
+        query["user_id"] = current_user['id']
+    
     if status:
         query["status"] = status
     
@@ -827,8 +1077,13 @@ async def get_upcoming_followups(
     """Get follow-ups that are due soon or overdue with contact details"""
     now = datetime.now(timezone.utc).isoformat()
     
+    # Build query - staff see only their own, admins see all
+    query = {"status": {"$in": ["pending", "overdue"]}}
+    if current_user.get('role') != 'admin':
+        query["user_id"] = current_user['id']
+    
     followups = await db.followups.find(
-        {"status": {"$in": ["pending", "overdue"]}},
+        query,
         {"_id": 0}
     ).sort("follow_up_date", 1).to_list(None)
     
@@ -879,8 +1134,11 @@ async def get_followups_by_date(
         start_date = None
         end_date = None
     
-    # Build query
+    # Build query - staff see only their own, admins see all
     query = {"status": {"$in": ["pending", "overdue"]}}
+    if current_user.get('role') != 'admin':
+        query["user_id"] = current_user['id']
+    
     if start_date and end_date:
         query["follow_up_date"] = {
             "$gte": start_date.isoformat(),
@@ -932,14 +1190,30 @@ async def get_paginated_followups(
     skip: int = 0,
     limit: int = 20,
     date_filter: str = "all",
+    custom_date: str = None,
     current_user: dict = Depends(get_current_user)
 ):
     """Get paginated follow-ups"""
     now = datetime.now(timezone.utc)
     
-    # Calculate date range based on filter
+    # Calculate date range based on filter - staff see only their own, admins see all
     query = {"status": {"$in": ["pending", "overdue"]}}
-    if date_filter == "today":
+    if current_user.get('role') != 'admin':
+        query["user_id"] = current_user['id']
+    
+    if date_filter == "custom" and custom_date:
+        # Parse custom date and get that day's range
+        try:
+            selected_date = datetime.fromisoformat(custom_date.replace('Z', '+00:00'))
+            start_date = selected_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+            query["follow_up_date"] = {
+                "$gte": start_date.isoformat(),
+                "$lte": end_date.isoformat()
+            }
+        except:
+            pass  # If parsing fails, fall back to no date filter
+    elif date_filter == "today":
         start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end_date = now.replace(hour=23, minute=59, second=59, microsecond=999999)
         query["follow_up_date"] = {
@@ -961,6 +1235,13 @@ async def get_paginated_followups(
             "$gte": start_date.isoformat(),
             "$lte": end_date.isoformat()
         }
+    elif date_filter == "next_week":
+        next_week_start = (now + timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+        next_week_end = (now + timedelta(days=14)).replace(hour=23, minute=59, second=59, microsecond=999999)
+        query["follow_up_date"] = {
+            "$gte": next_week_start.isoformat(),
+            "$lte": next_week_end.isoformat()
+        }
     
     followups = await db.followups.find(query, {"_id": 0}).sort("follow_up_date", 1).skip(skip).limit(limit).to_list(limit)
     
@@ -977,7 +1258,76 @@ async def get_paginated_followups(
             followup['contact'] = contact
             result.append(followup)
     
-    return result
+    return {"followups": result}
+
+@api_router.get("/followups/completed")
+async def get_completed_followups(
+    date_filter: str = "today",
+    custom_date: str = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get completed follow-ups for a specific date range"""
+    now = datetime.now(timezone.utc)
+    
+    # Build query for completed follow-ups - staff see only their own, admins see all
+    query = {"status": "completed"}
+    if current_user.get('role') != 'admin':
+        query["user_id"] = current_user['id']
+    
+    # Apply date filter based on completion/follow_up_date
+    if date_filter == "custom" and custom_date:
+        # Parse custom date and get that day's range
+        try:
+            selected_date = datetime.fromisoformat(custom_date.replace('Z', '+00:00'))
+            start_date = selected_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+            query["follow_up_date"] = {
+                "$gte": start_date.isoformat(),
+                "$lte": end_date.isoformat()
+            }
+        except:
+            pass  # If parsing fails, fall back to no date filter
+    elif date_filter == "today":
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        query["follow_up_date"] = {
+            "$gte": start_date.isoformat(),
+            "$lte": end_date.isoformat()
+        }
+    elif date_filter == "tomorrow":
+        tomorrow = now + timedelta(days=1)
+        start_date = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = tomorrow.replace(hour=23, minute=59, second=59, microsecond=999999)
+        query["follow_up_date"] = {
+            "$gte": start_date.isoformat(),
+            "$lte": end_date.isoformat()
+        }
+    elif date_filter == "this_week":
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = (now + timedelta(days=7)).replace(hour=23, minute=59, second=59, microsecond=999999)
+        query["follow_up_date"] = {
+            "$gte": start_date.isoformat(),
+            "$lte": end_date.isoformat()
+        }
+    elif date_filter == "next_week":
+        next_week_start = (now + timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+        next_week_end = (now + timedelta(days=14)).replace(hour=23, minute=59, second=59, microsecond=999999)
+        query["follow_up_date"] = {
+            "$gte": next_week_start.isoformat(),
+            "$lte": next_week_end.isoformat()
+        }
+    
+    followups = await db.followups.find(query, {"_id": 0}).sort("follow_up_date", -1).to_list(None)
+    
+    # Add contact details to each follow-up
+    result = []
+    for followup in followups:
+        contact = await db.contacts.find_one({"id": followup['contact_id']}, {"_id": 0})
+        if contact:
+            followup['contact'] = contact
+            result.append(followup)
+    
+    return {"followups": result}
 
 # ============ ACTIVITY LOG ROUTES ============
 
@@ -987,7 +1337,12 @@ async def get_activity_logs(
     limit: int = 100,
     current_user: dict = Depends(get_current_user)
 ):
-    logs = await db.activity_logs.find({}, {"_id": 0}).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+    # Staff see only their own activity logs, admins see all
+    query = {}
+    if current_user.get('role') != 'admin':
+        query["user_id"] = current_user['id']
+    
+    logs = await db.activity_logs.find(query, {"_id": 0}).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
     return logs
 
 # ============ MEETING ROUTES ============
@@ -1042,7 +1397,11 @@ async def get_meetings(
     status: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
-    query = {"user_id": current_user['id']}
+    # Staff see only their own meetings, admins see all
+    query = {}
+    if current_user.get('role') != 'admin':
+        query["user_id"] = current_user['id']
+    
     if status:
         query["status"] = status
     
@@ -1279,7 +1638,8 @@ async def mark_demo_watched(
     if not demo:
         raise HTTPException(status_code=404, detail="Demo not found")
     
-    if demo['user_id'] != current_user['id']:
+    # Staff can only update their own demos, admins can update any
+    if current_user.get('role') != 'admin' and demo['user_id'] != current_user['id']:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     watched_at = watch_data.watched_at or datetime.now(timezone.utc).isoformat()
@@ -1322,8 +1682,13 @@ async def get_contact_demos(
     current_user: dict = Depends(get_current_user)
 ):
     """Get demo history for a contact"""
+    # Build query - staff see only their own demos, admins see all
+    query = {"contact_id": contact_id}
+    if current_user.get('role') != 'admin':
+        query["user_id"] = current_user['id']
+    
     demos = await db.demos.find(
-        {"contact_id": contact_id}, 
+        query, 
         {"_id": 0}
     ).sort("given_at", -1).to_list(None)
     
@@ -1353,14 +1718,19 @@ async def get_demo_report(
     else:
         raise HTTPException(status_code=400, detail="Invalid group_by parameter")
     
+    # Build match query - staff see only their own demos, admins see all
+    match_query = {
+        "given_at": {
+            "$gte": start_date.isoformat(),
+            "$lte": end_date.isoformat()
+        }
+    }
+    if current_user.get('role') != 'admin':
+        match_query["user_id"] = current_user['id']
+    
     pipeline = [
         {
-            "$match": {
-                "given_at": {
-                    "$gte": start_date.isoformat(),
-                    "$lte": end_date.isoformat()
-                }
-            }
+            "$match": match_query
         },
         {
             "$group": {
@@ -1419,14 +1789,19 @@ async def get_demo_summary(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format")
     
+    # Build match query - staff see only their own demos, admins see all
+    match_query = {
+        "given_at": {
+            "$gte": start_date.isoformat(),
+            "$lte": end_date.isoformat()
+        }
+    }
+    if current_user.get('role') != 'admin':
+        match_query["user_id"] = current_user['id']
+    
     pipeline = [
         {
-            "$match": {
-                "given_at": {
-                    "$gte": start_date.isoformat(),
-                    "$lte": end_date.isoformat()
-                }
-            }
+            "$match": match_query
         },
         {
             "$group": {
@@ -1463,6 +1838,161 @@ async def get_demo_summary(
         "watched": data["watched"],
         "conversion": round(data["conversion"], 3)
     }
+
+# ============ PRODUCTIVITY ROUTES (ADMIN ONLY) ============
+
+@api_router.get("/productivity/staff-summary")
+async def get_staff_productivity(
+    start_date: str,
+    end_date: str,
+    admin_user: dict = Depends(get_admin_user)
+):
+    """Get productivity summary for all staff members"""
+    try:
+        start = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        end = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format")
+    
+    # Get all users
+    users = await db.users.find({}, {"_id": 0}).to_list(None)
+    
+    results = []
+    for user in users:
+        user_id = user['id']
+        user_email = user['email']
+        user_name = user_email.split('@')[0]
+        
+        # Count follow-ups created
+        followups_created = await db.followups.count_documents({
+            "user_id": user_id,
+            "created_at": {"$gte": start.isoformat(), "$lte": end.isoformat()}
+        })
+        
+        # Count follow-ups completed
+        followups_completed = await db.followups.count_documents({
+            "user_id": user_id,
+            "status": "completed",
+            "created_at": {"$gte": start.isoformat(), "$lte": end.isoformat()}
+        })
+        
+        # Count demos given
+        demos_given = await db.demos.count_documents({
+            "user_id": user_id,
+            "given_at": {"$gte": start.isoformat(), "$lte": end.isoformat()}
+        })
+        
+        # Count demos watched
+        demos_watched = await db.demos.count_documents({
+            "user_id": user_id,
+            "watched": True,
+            "given_at": {"$gte": start.isoformat(), "$lte": end.isoformat()}
+        })
+        
+        # Count meetings created
+        meetings_created = await db.meetings.count_documents({
+            "user_id": user_id,
+            "created_at": {"$gte": start.isoformat(), "$lte": end.isoformat()}
+        })
+        
+        # Count fresh calls (status changes from None to any other status)
+        # We detect this by checking for assigned_staff in activity logs
+        # since assigned_staff is only set when status changes from None to any other status
+        fresh_calls = await db.activity_logs.count_documents({
+            "user_id": user_id,
+            "action": "Updated contact",
+            "details": {"$regex": "assigned_staff", "$options": "i"},
+            "timestamp": {"$gte": start.isoformat(), "$lte": end.isoformat()}
+        })
+        
+        results.append({
+            "user_id": user_id,
+            "user_email": user_email,
+            "user_name": user_name,
+            "role": user.get('role', 'staff'),
+            "followups_created": followups_created,
+            "followups_completed": followups_completed,
+            "demos_given": demos_given,
+            "demos_watched": demos_watched,
+            "meetings_created": meetings_created,
+            "fresh_calls": fresh_calls
+        })
+    
+    return results
+
+@api_router.get("/productivity/staff-details")
+async def get_staff_productivity_details(
+    user_id: str,
+    metric_type: str,  # followups, demos, meetings, calls
+    start_date: str,
+    end_date: str,
+    admin_user: dict = Depends(get_admin_user)
+):
+    """Get detailed breakdown of staff productivity for a specific metric"""
+    try:
+        start = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        end = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format")
+    
+    if metric_type == "followups":
+        followups = await db.followups.find({
+            "user_id": user_id,
+            "created_at": {"$gte": start.isoformat(), "$lte": end.isoformat()}
+        }, {"_id": 0}).sort("created_at", -1).to_list(None)
+        
+        # Add contact details
+        for followup in followups:
+            contact = await db.contacts.find_one({"id": followup['contact_id']}, {"_id": 0})
+            followup['contact'] = contact
+        
+        return {"type": "followups", "data": followups}
+    
+    elif metric_type == "demos":
+        demos = await db.demos.find({
+            "user_id": user_id,
+            "given_at": {"$gte": start.isoformat(), "$lte": end.isoformat()}
+        }, {"_id": 0}).sort("given_at", -1).to_list(None)
+        
+        # Add contact details
+        for demo in demos:
+            contact = await db.contacts.find_one({"id": demo['contact_id']}, {"_id": 0})
+            demo['contact'] = contact
+        
+        return {"type": "demos", "data": demos}
+    
+    elif metric_type == "meetings":
+        meetings = await db.meetings.find({
+            "user_id": user_id,
+            "created_at": {"$gte": start.isoformat(), "$lte": end.isoformat()}
+        }, {"_id": 0}).sort("created_at", -1).to_list(None)
+        
+        return {"type": "meetings", "data": meetings}
+    
+    elif metric_type == "calls":
+        # Get activity logs for fresh calls (None to any status changes)
+        logs = await db.activity_logs.find({
+            "user_id": user_id,
+            "action": "Updated contact",
+            "details": {"$regex": "assigned_staff", "$options": "i"},
+            "timestamp": {"$gte": start.isoformat(), "$lte": end.isoformat()}
+        }, {"_id": 0}).sort("timestamp", -1).to_list(None)
+        
+        # Add contact details to each log
+        for log in logs:
+            contact = await db.contacts.find_one({"phone": log.get("target")}, {"_id": 0})
+            if contact:
+                log["contact"] = {
+                    "phone": contact.get("phone"),
+                    "customer_name": contact.get("customer_name"),
+                    "status": contact.get("status"),
+                    "data": contact.get("data", {})
+                }
+        
+        return {"type": "calls", "data": logs}
+    
+    else:
+        raise HTTPException(status_code=400, detail="Invalid metric type")
 
 # ============ SCHEDULER FOR FOLLOW-UP ALERTS ============
 

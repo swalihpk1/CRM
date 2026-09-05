@@ -12,7 +12,6 @@ function readPhone2(contact) {
 
 const STATUS_BADGE = {
   None: 'bg-gray-100 text-gray-700',
-  Called: 'bg-blue-100 text-blue-800',
   'Not Attending': 'bg-orange-100 text-orange-800',
   'Follow-up': 'bg-yellow-100 text-yellow-800',
   Interested: 'bg-green-100 text-green-800',

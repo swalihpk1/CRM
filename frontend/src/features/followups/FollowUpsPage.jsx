@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as followupsApi from '../../api/followups';
 import { useQuery } from '../../hooks/useQuery';
 import { useInvalidationSubscription } from '../../context/CacheContext';
+import { StatsGrid } from '../../components/StatsGrid';
 import { DateFilterBar } from './DateFilterBar';
 import { FollowupList } from './FollowupList';
 import { CompleteFollowupModal } from './CompleteFollowupModal';
@@ -96,24 +97,16 @@ export function FollowUpsPage() {
           onSetCustomDate={setCustomDate}
         />
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white rounded-lg shadow-md p-4 border-l-4 border-blue-500">
-            <p className="text-xs text-gray-600 font-medium">Total Follow-ups</p>
-            <p className="text-xl sm:text-2xl font-bold text-gray-800">{statistics.total}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow-md p-4 border-l-4 border-green-500">
-            <p className="text-xs text-gray-600 font-medium">Completed</p>
-            <p className="text-xl sm:text-2xl font-bold text-green-600">{statistics.completed}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow-md p-4 border-l-4 border-yellow-500">
-            <p className="text-xs text-gray-600 font-medium">Pending</p>
-            <p className="text-xl sm:text-2xl font-bold text-yellow-600">{statistics.pending}</p>
-          </div>
-          <div className="bg-white rounded-lg shadow-md p-4 border-l-4 border-red-500">
-            <p className="text-xs text-gray-600 font-medium">Overdue</p>
-            <p className="text-xl sm:text-2xl font-bold text-red-600">{statistics.overdue}</p>
-          </div>
-        </div>
+        <StatsGrid
+          items={[
+            { key: 'total', label: 'Total Follow-ups', value: statistics.total, colorClass: 'text-gray-800' },
+            { key: 'completed', label: 'Completed', value: statistics.completed, colorClass: 'text-green-600' },
+            { key: 'pending', label: 'Pending', value: statistics.pending, colorClass: 'text-yellow-600' },
+            { key: 'overdue', label: 'Overdue', value: statistics.overdue, colorClass: 'text-red-600' },
+          ]}
+          columnsSm={4}
+          columnsLg={4}
+        />
       </div>
 
       <div className="bg-white rounded-lg shadow-md mb-6">

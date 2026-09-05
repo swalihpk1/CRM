@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import * as demosApi from '../../api/demos';
 import { useQuery } from '../../hooks/useQuery';
-import { DemoSummaryCards } from './DemoSummaryCards';
+import { StatsGrid } from '../../components/StatsGrid';
 import { DemoReportTable } from './DemoReportTable';
 
 function todayIso() {
@@ -45,7 +45,22 @@ export function DemoReportsPage() {
     <div>
       <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-800 mb-6">🎬 Demo Reports</h2>
 
-      <DemoSummaryCards summary={summary} />
+      <div className="mb-6 lg:mb-8">
+        <StatsGrid
+          items={[
+            { key: 'given', label: 'Demos Given', value: summary.given, colorClass: 'text-orange-600' },
+            { key: 'watched', label: 'Demos Watched', value: summary.watched, colorClass: 'text-green-600' },
+            {
+              key: 'conversion',
+              label: 'Conversion Rate',
+              value: `${(summary.conversion * 100).toFixed(1)}%`,
+              colorClass: 'text-blue-600',
+            },
+          ]}
+          columnsSm={3}
+          columnsLg={3}
+        />
+      </div>
 
       <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-8">
         <div className="flex flex-col sm:flex-row flex-wrap gap-4 sm:items-end">

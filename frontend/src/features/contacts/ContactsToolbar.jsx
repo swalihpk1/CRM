@@ -2,7 +2,6 @@ import React from 'react';
 
 export const STATUSES = [
   'None',
-  'Called',
   'Not Attending',
   'Follow-up',
   'Interested',

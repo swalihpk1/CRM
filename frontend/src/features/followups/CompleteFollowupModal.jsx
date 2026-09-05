@@ -7,7 +7,6 @@ import { format12Hour, getContactName, getContactPhone } from '../../lib/formatt
 
 const CALL_OUTCOMES = [
   { value: '', label: 'Select call outcome...' },
-  { value: 'Called', label: '📞 Called - Contact established' },
   { value: 'Not Attending', label: '⏸️ Not Attending - Unavailable/Busy' },
   { value: 'Interested', label: '✅ Interested - Positive response' },
   { value: 'Not Interested', label: '❌ Not Interested - Declined' },

@@ -110,9 +110,7 @@ function CallItem({ item }) {
         </div>
         <span
           className={`px-3 py-1 rounded-full text-xs font-semibold shrink-0 ${
-            item.contact?.status === 'Called'
-              ? 'bg-blue-100 text-blue-800'
-              : item.contact?.status === 'Follow Up'
+            item.contact?.status === 'Follow Up'
               ? 'bg-yellow-100 text-yellow-800'
               : item.contact?.status === 'Interested'
               ? 'bg-green-100 text-green-800'

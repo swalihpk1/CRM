@@ -11,7 +11,6 @@ import { format12Hour, readContactField } from '../../lib/formatters';
 
 const STATUSES = [
   { value: 'None', label: '🔘 None - No action taken', badge: 'bg-gray-50 text-gray-700' },
-  { value: 'Called', label: '📞 Called - Contact established', badge: 'bg-blue-50 text-blue-800' },
   { value: 'Not Attending', label: '⏸️ Not Attending - Unavailable/Busy', badge: 'bg-orange-50 text-orange-800' },
   { value: 'Follow-up', label: '⏰ Follow-up - Needs reconnection', badge: 'bg-yellow-50 text-yellow-800' },
   { value: 'Interested', label: '✅ Interested - Positive response', badge: 'bg-green-50 text-green-800' },

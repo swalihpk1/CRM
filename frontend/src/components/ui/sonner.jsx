@@ -1,14 +1,14 @@
-import { useTheme } from "next-themes"
 import { Toaster as Sonner, toast } from "sonner"
 
+// This app has no dark mode / no ThemeProvider mounted, so theme is
+// hardcoded to "light" rather than pulling in next-themes' useTheme()
+// (which is installed but unused elsewhere) for a single fixed value.
 const Toaster = ({
   ...props
 }) => {
-  const { theme = "system" } = useTheme()
-
   return (
     <Sonner
-      theme={theme}
+      theme="light"
       className="toaster group"
       toastOptions={{
         classNames: {

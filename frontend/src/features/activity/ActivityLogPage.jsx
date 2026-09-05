@@ -38,14 +38,14 @@ export function ActivityLogPage() {
         ) : (
           <>
             {/* Mobile: stacked cards */}
-            <div className="sm:hidden divide-y">
+            <div className="lg:hidden divide-y">
               {logs.map((log) => (
                 <ActivityLogCard key={log.id} log={log} contacts={contacts} />
               ))}
             </div>
 
             {/* Tablet/desktop: table */}
-            <div className="hidden sm:block overflow-x-auto">
+            <div className="hidden lg:block overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50 border-b">
                   <tr>

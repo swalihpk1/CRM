@@ -25,7 +25,7 @@ export function ImportPreviewTable({ columns, mapping, onMappingChange }) {
             <select
               value={mapping[field.key] || ''}
               onChange={(e) => onMappingChange({ ...mapping, [field.key]: e.target.value })}
-              className="w-full px-4 py-3 sm:py-2 border border-gray-300 rounded-lg text-base"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
             >
               <option value="">Select column...</option>
               {columns.map((col) => (

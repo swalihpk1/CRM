@@ -144,13 +144,13 @@ export function ContactsPage() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4 lg:mb-6">
+      <div className="flex flex-row justify-between items-center gap-3 mt-2 mb-4 lg:mb-6 mb-4">
         <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-800">Contacts</h2>
         <button
           onClick={() => setShowAddModal(true)}
-          className="px-4 lg:px-6 py-3 sm:py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold text-sm min-h-11 touch-manipulation"
+          className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold text-xs sm:text-sm shrink-0 touch-manipulation"
         >
-          + Add Contact
+          + Add New
         </button>
       </div>
 
@@ -168,13 +168,13 @@ export function ContactsPage() {
         onClear={() => setSelectedContacts(new Set())}
       />
 
-      <div className="bg-white rounded-xl shadow-md overflow-hidden">
-        <div className="flex justify-end p-4 border-b">
+      <div className="bg-dark shadow-md overflow-hidden">
+        <div className="flex justify-end p-2 border-b">
           <button
             onClick={() => setShowColumnSettings((v) => !v)}
-            className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition min-h-11 touch-manipulation"
+            className="flex items-center gap-2 px-3 shadow-md text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition min-h-1 touch-manipulation"
           >
-            ⚙️ <span className="hidden sm:inline">Column Settings</span>
+            ⚙️ Show settings
           </button>
         </div>
 

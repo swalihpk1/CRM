@@ -104,7 +104,7 @@ export function CompleteFollowupModal({ followup, onClose }) {
             <select
               value={callStatus}
               onChange={(e) => setCallStatus(e.target.value)}
-              className="w-full px-3 py-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-base"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-base"
             >
               {CALL_OUTCOMES.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -149,7 +149,7 @@ export function CompleteFollowupModal({ followup, onClose }) {
                   type="datetime-local"
                   value={nextFollowupDate}
                   onChange={(e) => setNextFollowupDate(e.target.value)}
-                  className="w-full px-3 py-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-base"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-base"
                   required={scheduleNext}
                 />
               </div>
@@ -162,7 +162,7 @@ export function CompleteFollowupModal({ followup, onClose }) {
                   value={nextFollowupNotes}
                   onChange={(e) => setNextFollowupNotes(e.target.value)}
                   placeholder="Purpose of next follow-up..."
-                  className="w-full px-3 py-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-base"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-base"
                 />
               </div>
             </div>

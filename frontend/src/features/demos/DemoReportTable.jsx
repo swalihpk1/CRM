@@ -21,7 +21,7 @@ export function DemoReportTable({ rows, loading }) {
   return (
     <>
       {/* Mobile: stacked cards */}
-      <div className="sm:hidden divide-y">
+      <div className="lg:hidden divide-y">
         {rows.map((row, index) => (
           <div key={index} className="p-4">
             <div className="text-sm font-medium text-gray-900 mb-2">{row.period}</div>
@@ -41,7 +41,7 @@ export function DemoReportTable({ rows, loading }) {
       </div>
 
       {/* Tablet/desktop: table */}
-      <div className="hidden sm:block overflow-x-auto">
+      <div className="hidden lg:block overflow-x-auto">
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>

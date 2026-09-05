@@ -90,7 +90,7 @@ export function UsersPage() {
       ) : (
         <>
           {/* Mobile: stacked cards */}
-          <div className="sm:hidden space-y-3">
+          <div className="lg:hidden space-y-3">
             {users.map((user) => (
               <div key={user.id} className="bg-white rounded-xl shadow-md p-4">
                 <div className="flex justify-between items-start gap-2">
@@ -125,7 +125,7 @@ export function UsersPage() {
           </div>
 
           {/* Desktop/tablet: table */}
-          <div className="hidden sm:block bg-white rounded-xl shadow-md overflow-hidden">
+          <div className="hidden lg:block bg-white rounded-xl shadow-md overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50 border-b">

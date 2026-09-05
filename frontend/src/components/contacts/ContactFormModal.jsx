@@ -67,7 +67,7 @@ export function ContactFormModal({ onClose, onCreated }) {
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               required
-              className="w-full px-4 py-3 sm:py-2 border border-gray-300 rounded-lg text-base"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
               placeholder="+1234567890"
             />
           </div>
@@ -77,7 +77,7 @@ export function ContactFormModal({ onClose, onCreated }) {
               type="text"
               value={shopName}
               onChange={(e) => setShopName(e.target.value)}
-              className="w-full px-4 py-3 sm:py-2 border border-gray-300 rounded-lg text-base"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
               placeholder="Shop Name"
             />
           </div>
@@ -87,7 +87,7 @@ export function ContactFormModal({ onClose, onCreated }) {
               type="text"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              className="w-full px-4 py-3 sm:py-2 border border-gray-300 rounded-lg text-base"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
               placeholder="Street Address"
             />
           </div>
@@ -98,7 +98,7 @@ export function ContactFormModal({ onClose, onCreated }) {
                 type="text"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                className="w-full px-4 py-3 sm:py-2 border border-gray-300 rounded-lg text-base"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
                 placeholder="City"
               />
             </div>
@@ -108,7 +108,7 @@ export function ContactFormModal({ onClose, onCreated }) {
                 type="text"
                 value={state}
                 onChange={(e) => setState(e.target.value)}
-                className="w-full px-4 py-3 sm:py-2 border border-gray-300 rounded-lg text-base"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
                 placeholder="State"
               />
             </div>
@@ -119,7 +119,7 @@ export function ContactFormModal({ onClose, onCreated }) {
               type="text"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="w-full px-4 py-3 sm:py-2 border border-gray-300 rounded-lg text-base"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
               placeholder="Business Category"
             />
           </div>

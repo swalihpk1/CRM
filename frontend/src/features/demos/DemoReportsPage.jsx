@@ -92,7 +92,7 @@ export function DemoReportsPage() {
                 type="date"
                 value={dateRange.start}
                 onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                className="px-3 py-2 border border-gray-300 rounded-lg min-h-11 text-base"
+                className="px-3 py-2 border border-gray-300 rounded-lg text-base"
               />
             </div>
             <div>
@@ -101,7 +101,7 @@ export function DemoReportsPage() {
                 type="date"
                 value={dateRange.end}
                 onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                className="px-3 py-2 border border-gray-300 rounded-lg min-h-11 text-base"
+                className="px-3 py-2 border border-gray-300 rounded-lg text-base"
               />
             </div>
             <div>
@@ -109,7 +109,7 @@ export function DemoReportsPage() {
               <select
                 value={groupBy}
                 onChange={(e) => setGroupBy(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg min-h-11 text-base"
+                className="px-3 py-2 border border-gray-300 rounded-lg text-base"
               >
                 <option value="day">Daily</option>
                 <option value="week">Weekly</option>

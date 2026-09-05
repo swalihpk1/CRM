@@ -100,7 +100,7 @@ export function MeetingsPage() {
             placeholder="Search meetings by title, location, notes, or attendees..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 px-4 py-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
           />
           {searchQuery && (
             <button
@@ -135,7 +135,7 @@ export function MeetingsPage() {
             type="date"
             value={customDate}
             onChange={(e) => setCustomDate(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 min-h-11"
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
           />
           {customDate && (
             <button

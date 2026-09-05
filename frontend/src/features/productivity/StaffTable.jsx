@@ -19,7 +19,7 @@ export function StaffTable({ staffData, onMetricClick }) {
   return (
     <>
       {/* Mobile: stacked cards */}
-      <div className="sm:hidden space-y-3">
+      <div className="lg:hidden space-y-3">
         {staffData.map((staff) => (
           <div key={staff.user_id} className="bg-white rounded-xl shadow-md p-4">
             <div className="flex justify-between items-start mb-3">
@@ -56,7 +56,7 @@ export function StaffTable({ staffData, onMetricClick }) {
       </div>
 
       {/* Tablet/desktop: table */}
-      <div className="hidden sm:block bg-white rounded-xl shadow-md overflow-hidden">
+      <div className="hidden lg:block bg-white rounded-xl shadow-md overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b">

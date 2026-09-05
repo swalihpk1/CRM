@@ -18,12 +18,12 @@ export function ContactsToolbar({ searchQuery, onSearchChange, statusFilter, onS
         placeholder="Search contacts..."
         value={searchQuery}
         onChange={(e) => onSearchChange(e.target.value)}
-        className="flex-1 px-4 py-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-base"
+        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-base"
       />
       <select
         value={statusFilter}
         onChange={(e) => onStatusChange(e.target.value)}
-        className="px-4 py-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-base min-w-0 sm:min-w-[150px]"
+        className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white text-base min-w-0 sm:min-w-[150px]"
       >
         <option value="">All Statuses</option>
         {STATUSES.map((s) => (

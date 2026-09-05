@@ -32,7 +32,7 @@ export function DateFilterBar({ dateFilter, customDate, onSetFilter, onSetCustom
           type="date"
           value={customDate}
           onChange={(e) => onSetCustomDate(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent min-h-11 text-base"
+          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
         />
         {customDate && (
           <button

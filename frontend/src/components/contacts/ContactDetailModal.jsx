@@ -387,7 +387,7 @@ export function ContactDetailModal({ contact, onClose, onUpdated, onDeleted }) {
                 onChange={(e) => setNewNote(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddNote()}
                 placeholder="Add a note..."
-                className="flex-1 px-4 py-3 sm:py-2 border border-gray-300 rounded-lg text-base"
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-base"
               />
               <button
                 onClick={handleAddNote}
@@ -462,7 +462,7 @@ export function ContactDetailModal({ contact, onClose, onUpdated, onDeleted }) {
                 type="datetime-local"
                 value={followUpDate}
                 onChange={(e) => setFollowUpDate(e.target.value)}
-                className="w-full px-4 py-3 sm:py-2 border border-gray-300 rounded-lg text-base"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
               />
               <textarea
                 value={followUpNotes}

@@ -242,7 +242,7 @@ function DesktopTable({
   };
 
   return (
-    <div className="hidden sm:block overflow-x-auto">
+    <div className="hidden lg:block overflow-x-auto">
       <table className="w-full min-w-max">
         <thead className="bg-gray-50 border-b">
           <tr className="text-xs lg:text-sm">
@@ -314,7 +314,7 @@ function MobileCardList({
   const { openMeetingScheduler } = useMeetingScheduler();
 
   return (
-    <div className="sm:hidden divide-y">
+    <div className="lg:hidden divide-y">
       {contacts.map((contact) => {
         const shopName = readContactField(contact, 'shop_name');
         return (

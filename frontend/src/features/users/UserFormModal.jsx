@@ -43,7 +43,7 @@ export function UserFormModal({ onClose, onSave, isPending }) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className={`w-full px-3 py-3 sm:py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-base ${
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-base ${
                 errors.email ? 'border-red-500' : 'border-gray-300'
               }`}
               placeholder="user@example.com"
@@ -58,7 +58,7 @@ export function UserFormModal({ onClose, onSave, isPending }) {
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className={`w-full px-3 py-3 sm:py-2 pr-10 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-base ${
+                className={`w-full px-3 py-2 pr-10 border rounded-lg focus:ring-2 focus:ring-indigo-500 text-base ${
                   errors.password ? 'border-red-500' : 'border-gray-300'
                 }`}
                 placeholder="••••••••"
@@ -88,7 +88,7 @@ export function UserFormModal({ onClose, onSave, isPending }) {
             <select
               value={role}
               onChange={(e) => setRole(e.target.value)}
-              className="w-full px-3 py-3 sm:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-base"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-base"
             >
               <option value="staff">👤 Staff</option>
               <option value="admin">👑 Admin</option>

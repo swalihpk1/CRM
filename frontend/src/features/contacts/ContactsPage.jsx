@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from '../../components/ui/sonner';
+import { Settings } from 'lucide-react';
 import * as contactsApi from '../../api/contacts';
 import { useInfiniteList } from '../../hooks/useInfiniteList';
 import { useMutation } from '../../hooks/useMutation';
@@ -44,6 +45,7 @@ export function ContactsPage() {
     hasMore,
     sentinelRef,
     reset,
+    updateItem,
   } = useInfiniteList(
     ({ skip, limit, params }, signal) => contactsApi.getContacts({ skip, limit, ...params }, { signal }),
     { pageSize: 20, params: { search: debouncedSearch, status: statusFilter } }
@@ -76,6 +78,7 @@ export function ContactsPage() {
     {
       invalidates: ['contacts.count', 'activityLogs'],
       silent: true,
+      onSuccess: (_, { id, patch }) => updateItem(id, patch),
       onError: () => {
         toast.error('Failed to update contact');
         reset();
@@ -88,6 +91,7 @@ export function ContactsPage() {
     {
       invalidates: ['contacts.count', 'activityLogs'],
       silent: true,
+      onSuccess: (_, { id, status }) => updateItem(id, { status }),
       onError: () => toast.error('Failed to update status'),
     }
   );
@@ -130,7 +134,7 @@ export function ContactsPage() {
   const handleBulkStatusUpdate = async (status) => {
     const ids = Array.from(selectedContacts);
     await Promise.all(ids.map((id) => contactsApi.updateContact(id, { status })));
-    reset();
+    ids.forEach((id) => updateItem(id, { status }));
     setSelectedContacts(new Set());
     toast.success(`Updated status for ${ids.length} contact${ids.length !== 1 ? 's' : ''}`);
   };
@@ -169,21 +173,24 @@ export function ContactsPage() {
       />
 
       <div className="bg-dark shadow-md overflow-hidden">
-        <div className="flex justify-end p-2 border-b">
+        <div className="hidden lg:flex justify-end p-2 border-b">
           <button
             onClick={() => setShowColumnSettings((v) => !v)}
-            className="flex items-center gap-2 px-3 shadow-md text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition min-h-1 touch-manipulation"
+            className="flex items-center gap-1 px-3 shadow-md text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition min-h-1 touch-manipulation"
           >
-            ⚙️ Show settings
+            <Settings size={14} />
+            Show settings
           </button>
         </div>
 
         {showColumnSettings && (
-          <ColumnSettingsPanel
-            columns={columnConfig.columns}
-            onToggle={columnConfig.toggleVisibility}
-            onReset={columnConfig.reset}
-          />
+          <div className="hidden lg:block">
+            <ColumnSettingsPanel
+              columns={columnConfig.columns}
+              onToggle={columnConfig.toggleVisibility}
+              onReset={columnConfig.reset}
+            />
+          </div>
         )}
 
         <ContactsTable

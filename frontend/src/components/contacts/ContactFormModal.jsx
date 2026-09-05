@@ -5,6 +5,8 @@ import { useMutation } from '../../hooks/useMutation';
 
 export function ContactFormModal({ onClose, onCreated }) {
   const [phone, setPhone] = useState('');
+  const [phone2, setPhone2] = useState('');
+  const [customerName, setCustomerName] = useState('');
   const [shopName, setShopName] = useState('');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
@@ -36,7 +38,9 @@ export function ContactFormModal({ onClose, onCreated }) {
     e.preventDefault();
     createContact({
       phone,
+      customer_name: customerName || undefined,
       data: {
+        phone2: phone2 || undefined,
         shop_name: shopName || undefined,
         address: address || undefined,
         city: city || undefined,
@@ -60,15 +64,37 @@ export function ContactFormModal({ onClose, onCreated }) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
+              <input
+                type="text"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
+                placeholder="+1234567890"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone 2</label>
+              <input
+                type="text"
+                value={phone2}
+                onChange={(e) => setPhone2(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
+                placeholder="Alternate phone"
+              />
+            </div>
+          </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name</label>
             <input
               type="text"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              required
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg text-base"
-              placeholder="+1234567890"
+              placeholder="Customer Name"
             />
           </div>
           <div>
@@ -91,7 +117,7 @@ export function ContactFormModal({ onClose, onCreated }) {
               placeholder="Street Address"
             />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
               <input

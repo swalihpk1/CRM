@@ -72,7 +72,7 @@ export function BulkActionsBar({ count, onUpdateStatus, onDelete, onClear }) {
             onClick={onClear}
             className="px-3 py-2 bg-gray-500 text-white text-sm rounded-md hover:bg-gray-600 transition min-h-9"
           >
-            Clear Selection
+            Clear 
           </button>
         </div>
       </div>

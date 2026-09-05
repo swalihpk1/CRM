@@ -1,7 +1,8 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Phone, Pencil, Trash2 } from 'lucide-react';
+import { FaWhatsapp } from 'react-icons/fa';
 import { useConfirm } from '../../hooks/useConfirm';
-import { useMeetingScheduler } from '../../context/MeetingSchedulerContext';
 import { readContactField } from '../../lib/formatters';
 import { STATUSES } from './ContactsToolbar';
 
@@ -43,7 +44,6 @@ function DesktopTable({
   onOpenContact,
 }) {
   const confirm = useConfirm();
-  const { openMeetingScheduler } = useMeetingScheduler();
 
   const renderCell = (column, contact) => {
     switch (column.id) {
@@ -73,7 +73,16 @@ function DesktopTable({
               className="text-indigo-600 hover:text-indigo-800"
               title="Call"
             >
-              📞
+              <Phone size={14} />
+            </a>
+            <a
+              href={`https://wa.me/${String(contact.phone).replace(/[^\d]/g, '')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title="WhatsApp"
+            >
+              <FaWhatsapp size={14} color="#25D366" />
             </a>
           </div>
         );
@@ -94,21 +103,32 @@ function DesktopTable({
                 className="text-indigo-600 hover:text-indigo-800 text-sm ml-2"
                 title="Edit Phone 2"
               >
-                ✏️
+                <Pencil size={13} />
               </button>
             </div>
             {phone2 && (
-              <a
-                href={`tel:${phone2}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onLogCall(contact.id);
-                }}
-                className="text-indigo-600 hover:text-indigo-800"
-                title="Call Phone 2"
-              >
-                📞
-              </a>
+              <>
+                <a
+                  href={`tel:${phone2}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onLogCall(contact.id);
+                  }}
+                  className="text-indigo-600 hover:text-indigo-800"
+                  title="Call Phone 2"
+                >
+                  <Phone size={14} />
+                </a>
+                <a
+                  href={`https://wa.me/${String(phone2).replace(/[^\d]/g, '')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  title="WhatsApp"
+                >
+                  <FaWhatsapp size={14} color="#25D366" />
+                </a>
+              </>
             )}
           </div>
         );
@@ -128,30 +148,13 @@ function DesktopTable({
               className="text-indigo-600 hover:text-indigo-800 text-sm ml-2"
               title="Edit Customer Name"
             >
-              ✏️
+              <Pencil size={13} />
             </button>
           </div>
         );
       case 'shopName': {
         const shopName = readContactField(contact, 'shop_name') || '';
-        return (
-          <div className="flex items-center justify-between">
-            <span>{shopName || '-'}</span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                const newShopName = window.prompt('Enter new shop name:', shopName);
-                if (newShopName !== null && newShopName !== shopName) {
-                  onUpdate({ ...contact, data: { ...contact.data, shop_name: newShopName } });
-                }
-              }}
-              className="text-indigo-600 hover:text-indigo-800 text-sm ml-2"
-              title="Edit Shop Name"
-            >
-              ✏️
-            </button>
-          </div>
-        );
+        return <span>{shopName || '-'}</span>;
       }
       case 'address':
         return (
@@ -199,26 +202,6 @@ function DesktopTable({
         return (
           <div className="flex items-center gap-2">
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                openMeetingScheduler([contact]);
-              }}
-              className="text-indigo-600 hover:text-indigo-800 text-sm"
-              title="Schedule Meeting"
-            >
-              📅
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenContact(contact);
-              }}
-              className="text-indigo-600 hover:text-indigo-800 text-sm"
-              title="View Details"
-            >
-              👁️
-            </button>
-            <button
               onClick={async (e) => {
                 e.stopPropagation();
                 const ok = await confirm({
@@ -229,10 +212,10 @@ function DesktopTable({
                 });
                 if (ok) onDelete(contact.id);
               }}
-              className="text-red-600 hover:text-red-800 text-sm"
+              className="text-red-600 hover:text-red-800"
               title="Delete Contact"
             >
-              🗑️
+              <Trash2 size={15} />
             </button>
           </div>
         );
@@ -300,23 +283,23 @@ function DesktopTable({
   );
 }
 
-/** Mobile (<sm) card list — the responsive alternative to the table. */
+/** Mobile (<lg) card list — the responsive alternative to the table. */
 function MobileCardList({
   contacts,
   selectedContacts,
   onSelectContact,
   onLogCall,
   onUpdateStatus,
-  onDelete,
   onOpenContact,
 }) {
-  const confirm = useConfirm();
-  const { openMeetingScheduler } = useMeetingScheduler();
-
   return (
     <div className="lg:hidden divide-y">
       {contacts.map((contact) => {
         const shopName = readContactField(contact, 'shop_name');
+        const phone2 = readPhone2(contact);
+        const city = contact.data?.city || contact.data?.City || '';
+        const waHref = (phone) => `https://wa.me/${String(phone).replace(/[^\d]/g, '')}`;
+
         return (
           <div
             key={contact.id}
@@ -355,49 +338,69 @@ function MobileCardList({
                     ))}
                   </select>
                 </div>
-                <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
-                  <span>{contact.phone}</span>
-                  <a
-                    href={`tel:${contact.phone}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onLogCall(contact.id, contact.phone);
-                    }}
-                    className="text-indigo-600 min-w-8 min-h-8 flex items-center justify-center"
-                    title="Call"
-                  >
-                    📞
-                  </a>
+                {shopName && contact.customer_name && (
+                  <p className="text-xs text-gray-500 truncate">{contact.customer_name}</p>
+                )}
+
+                <div className="flex items-center gap-6 mt-1 text-sm text-gray-600 flex-wrap">
+                  <div className="flex items-center gap-1">
+                    <span>{contact.phone}</span>
+                    <a
+                      href={`tel:${contact.phone}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onLogCall(contact.id, contact.phone);
+                      }}
+                      className="text-indigo-600 min-w-6 min-h-6 shadow border rounded flex items-center justify-center"
+                      title="Call"
+                    >
+                      <Phone size={14} />
+                    </a>
+                    <a
+                      href={waHref(contact.phone)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="min-w-6 min-h-6 shadow border rounded flex items-center justify-center"
+                      title="WhatsApp"
+                    >
+                      <FaWhatsapp size={14} color="#25D366" />
+                    </a>
+                  </div>
+
+                  {phone2 && (
+                    <div className="flex items-center gap-1">
+                      <span>{phone2}</span>
+                      <a
+                        href={`tel:${phone2}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onLogCall(contact.id, phone2);
+                        }}
+                        className="text-indigo-600 min-w-6 min-h-6 shadow border rounded flex items-center justify-center"
+                        title="Call"
+                      >
+                        <Phone size={14} />
+                      </a>
+                      <a
+                        href={waHref(phone2)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="min-w-6 min-h-6 shadow border rounded flex items-center justify-center"
+                        title="WhatsApp"
+                      >
+                        <FaWhatsapp size={14} color="#25D366" />
+                      </a>
+                    </div>
+                  )}
                 </div>
+
+                {city && <p className="text-xs text-gray-500 mt-1">{city}</p>}
+
                 <p className="text-xs text-gray-400 mt-1">
                   {contact.assigned_staff || 'Unassigned'}
                 </p>
-                <div className="flex items-center gap-4 mt-2">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openMeetingScheduler([contact]);
-                    }}
-                    className="text-indigo-600 text-sm min-h-9"
-                  >
-                    📅 Meeting
-                  </button>
-                  <button
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      const ok = await confirm({
-                        title: `Delete ${shopName || contact.phone}?`,
-                        description: 'This cannot be undone.',
-                        destructive: true,
-                        confirmLabel: 'Delete',
-                      });
-                      if (ok) onDelete(contact.id);
-                    }}
-                    className="text-red-600 text-sm min-h-9"
-                  >
-                    🗑️ Delete
-                  </button>
-                </div>
               </div>
             </div>
           </div>

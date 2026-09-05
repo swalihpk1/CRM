@@ -77,6 +77,15 @@ export function useInfiniteList(fetchPage, options = {}) {
     loadPage(0, { isInitial: true });
   }, [loadPage]);
 
+  // Patch a single already-loaded item in place (e.g. after a status change),
+  // so the list reflects the change immediately without waiting on a full
+  // refetch — matters for fast, frequent edits like table status dropdowns.
+  const updateItem = useCallback((id, patch) => {
+    setItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...(typeof patch === 'function' ? patch(item) : patch) } : item))
+    );
+  }, []);
+
   // Re-fetch from page 0 whenever params change (subsumes the old
   // `useEffect(() => resetContacts(), [searchQuery, statusFilter])`).
   useEffect(() => {
@@ -101,5 +110,5 @@ export function useInfiniteList(fetchPage, options = {}) {
     return () => observer.disconnect();
   }, [loadMore]);
 
-  return { items, isLoading, isLoadingMore, hasMore, error, sentinelRef, reset };
+  return { items, isLoading, isLoadingMore, hasMore, error, sentinelRef, reset, updateItem };
 }

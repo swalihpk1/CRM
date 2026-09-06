@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import * as contactsApi from '../../api/contacts';
 import { useQuery } from '../../hooks/useQuery';
 import { useInvalidationSubscription } from '../../context/CacheContext';
@@ -22,11 +23,17 @@ const STATUSES = Object.keys(STATUS_COLORS);
  * removed from this page; that data lives on the Follow-ups page instead).
  */
 export function DashboardPage() {
+  const navigate = useNavigate();
   const { data: stats, isLoading, refetch } = useQuery(
     (signal) => contactsApi.getContactsCount({ signal }),
     []
   );
   useInvalidationSubscription('contacts.count', refetch);
+
+  const goToContacts = (status) => {
+    if (status) navigate(`/contacts?status=${encodeURIComponent(status)}`);
+    else navigate('/contacts');
+  };
 
   if (isLoading && !stats) {
     return (
@@ -45,15 +52,19 @@ export function DashboardPage() {
     label: status,
     value: s.by_status[status] || 0,
     colorClass: STATUS_COLORS[status],
+    onClick: () => goToContacts(status),
   }));
 
   return (
     <div>
       <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-800 mb-4 lg:mb-6">Dashboard</h2>
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 px-4 py-3 sm:px-5 sm:py-4 mb-4">
+      <button
+        onClick={() => goToContacts()}
+        className="w-full text-left bg-white rounded-xl shadow-sm border border-gray-200 px-4 py-3 sm:px-5 sm:py-4 mb-4 hover:shadow-md hover:border-indigo-200 transition"
+      >
         <p className="text-xs text-gray-500 font-medium">Total Contacts</p>
         <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-indigo-700 mt-0.5">{s.total}</p>
-      </div>
+      </button>
       <div className="mb-6 lg:mb-8">
         <StatsGrid items={statusItems} columnsSm={4} columnsLg={4} />
       </div>

@@ -30,10 +30,19 @@ router.get('/productivity/staff-summary', requireAdmin, async (req, res, next) =
         created_at: { $gte: startIso, $lte: endIso },
       });
 
+      // Filters by completed_at (when it actually happened), not
+      // created_at — a backend-node-only fix, not in the Python source
+      // (see backend-node/CLAUDE.md exception). Counting by created_at
+      // was misleading: a follow-up created last month but completed
+      // today would never show up in today's "Completed" count under the
+      // old logic, even though the completion itself happened today.
+      // completed_at only exists on follow-ups completed after this fix
+      // shipped, so this can undercount completions from before then —
+      // there's no historical data to backfill it from.
       const followupsCompleted = await collections.followups().countDocuments({
         user_id: userId,
         status: 'completed',
-        created_at: { $gte: startIso, $lte: endIso },
+        completed_at: { $gte: startIso, $lte: endIso },
       });
 
       const demosGiven = await collections.demos().countDocuments({
@@ -52,10 +61,18 @@ router.get('/productivity/staff-summary', requireAdmin, async (req, res, next) =
         created_at: { $gte: startIso, $lte: endIso },
       });
 
+      // 'Assigned contact' is a dedicated action logged only when a
+      // previously-unassigned contact gets its first assignment (see
+      // routes/contacts.js's PUT /contacts/:contact_id) — querying it
+      // directly instead of regex-matching the 'Updated contact' details
+      // string is a backend-node-only fix (see backend-node/CLAUDE.md):
+      // the old regex checked for the literal substring "assigned_staff"
+      // in details, which silently broke (always 0) once the details
+      // string started saying "Status changed to: X" for the common case
+      // of a status change happening alongside the assignment.
       const freshCalls = await collections.activityLogs().countDocuments({
         user_id: userId,
-        action: 'Updated contact',
-        details: { $regex: 'assigned_staff', $options: 'i' },
+        action: 'Assigned contact',
         timestamp: { $gte: startIso, $lte: endIso },
       });
 
@@ -106,6 +123,27 @@ router.get('/productivity/staff-details', requireAdmin, async (req, res, next) =
       return res.json({ type: 'followups', data: followups });
     }
 
+    // Backend-node-only addition (see backend-node/CLAUDE.md exception) —
+    // a dedicated details type for the "Follow-ups Completed" count, which
+    // (like the summary count) is filtered by completed_at rather than
+    // created_at, so it correctly lists what was completed within the
+    // selected range regardless of when it was originally scheduled.
+    if (metric_type === 'followups_completed') {
+      const followups = await collections.followups().find(
+        { user_id, status: 'completed', completed_at: { $gte: startIso, $lte: endIso } },
+        { projection: { _id: 0 } }
+      ).sort({ completed_at: -1 }).toArray();
+
+      for (const followup of followups) {
+        followup.contact = await collections.contacts().findOne(
+          { id: followup.contact_id },
+          { projection: { _id: 0 } }
+        );
+      }
+
+      return res.json({ type: 'followups', data: followups });
+    }
+
     if (metric_type === 'demos') {
       const demos = await collections.demos().find(
         { user_id, given_at: { $gte: startIso, $lte: endIso } },
@@ -135,8 +173,7 @@ router.get('/productivity/staff-details', requireAdmin, async (req, res, next) =
       const logs = await collections.activityLogs().find(
         {
           user_id,
-          action: 'Updated contact',
-          details: { $regex: 'assigned_staff', $options: 'i' },
+          action: 'Assigned contact',
           timestamp: { $gte: startIso, $lte: endIso },
         },
         { projection: { _id: 0 } }

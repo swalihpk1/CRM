@@ -57,6 +57,19 @@ apiClient.interceptors.response.use(
       status,
       detail,
       isNetworkError: !error.response,
+      // Preserved verbatim (not just wrapped) so callers like useQuery can
+      // detect an aborted/superseded request the same way axios itself
+      // signals it — axios sets `code`/`name` directly on the CanceledError
+      // it throws, NOT on a nested property, so a caller checking
+      // `err.cause.code` or `err.name` against the ORIGINAL axios error
+      // would never match once it's wrapped in this normalized shape. This
+      // was a real bug: useQuery's cancel-detection silently never fired,
+      // so React StrictMode's dev double-mount (or any rapid deps change
+      // that aborts an in-flight request) surfaced as a real user-facing
+      // error toast even though a fresh, successful request was already
+      // underway.
+      code: error.code,
+      isCanceled: axios.isCancel ? axios.isCancel(error) : error.code === 'ERR_CANCELED',
       cause: error,
     };
 

@@ -342,7 +342,7 @@ function MobileCardList({
                   <p className="text-xs text-gray-500 truncate">{contact.customer_name}</p>
                 )}
 
-                <div className="flex items-center gap-6 mt-1 text-sm text-gray-600 flex-wrap">
+                <div className="flex items-center gap-3 mt-1 text-sm text-gray-600 flex-wrap">
                   <div className="flex items-center gap-1">
                     <span>{contact.phone}</span>
                     <a

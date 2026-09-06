@@ -12,8 +12,15 @@ function daysAgoIso(days) {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 }
 
+const QUICK_RANGES = [
+  { key: 7, label: 'Last 7 days' },
+  { key: 30, label: 'Last 30 days' },
+  { key: 90, label: 'Last 90 days' },
+];
+
 export function DemoReportsPage() {
   const [dateRange, setDateRange] = useState({ start: daysAgoIso(30), end: todayIso() });
+  const [activeRange, setActiveRange] = useState(30);
   const [groupBy, setGroupBy] = useState('day');
 
   // useQuery aborts the in-flight request on rapid date/groupBy changes —
@@ -38,12 +45,39 @@ export function DemoReportsPage() {
   const summary = data?.summary ?? { given: 0, watched: 0, conversion: 0 };
 
   const setQuickRange = (days) => {
+    setActiveRange(days);
     setDateRange({ start: daysAgoIso(days), end: todayIso() });
+  };
+
+  const setCustomStart = (value) => {
+    setActiveRange(null);
+    setDateRange((prev) => ({ ...prev, start: value }));
+  };
+
+  const setCustomEnd = (value) => {
+    setActiveRange(null);
+    setDateRange((prev) => ({ ...prev, end: value }));
   };
 
   return (
     <div>
-      <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-800 mb-6">🎬 Demo Reports</h2>
+      <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-800 mb-4 lg:mb-6">Demo Reports</h2>
+
+      <div className="mb-4">
+        <div className="flex flex-wrap gap-1.5">
+          {QUICK_RANGES.map((r) => (
+            <button
+              key={r.key}
+              onClick={() => setQuickRange(r.key)}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition min-h-8 ${
+                activeRange === r.key ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="mb-6 lg:mb-8">
         <StatsGrid
@@ -62,67 +96,44 @@ export function DemoReportsPage() {
         />
       </div>
 
-      <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-8">
-        <div className="flex flex-col sm:flex-row flex-wrap gap-4 sm:items-end">
-          <div className="flex gap-2 flex-wrap">
-            <button
-              onClick={() => setQuickRange(7)}
-              className="px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm min-h-9"
-            >
-              Last 7 days
-            </button>
-            <button
-              onClick={() => setQuickRange(30)}
-              className="px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm min-h-9"
-            >
-              Last 30 days
-            </button>
-            <button
-              onClick={() => setQuickRange(90)}
-              className="px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg text-sm min-h-9"
-            >
-              Last 90 days
-            </button>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
+        <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-3 sm:items-end">
+          <div className="min-w-0">
+            <label className="block text-xs text-gray-500 mb-1 truncate">Start Date</label>
+            <input
+              type="date"
+              value={dateRange.start}
+              onChange={(e) => setCustomStart(e.target.value)}
+              className="w-full px-1.5 sm:px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm"
+            />
           </div>
-
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-              <input
-                type="date"
-                value={dateRange.start}
-                onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-base"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-              <input
-                type="date"
-                value={dateRange.end}
-                onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-base"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Group By</label>
-              <select
-                value={groupBy}
-                onChange={(e) => setGroupBy(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-base"
-              >
-                <option value="day">Daily</option>
-                <option value="week">Weekly</option>
-                <option value="month">Monthly</option>
-              </select>
-            </div>
+          <div className="min-w-0">
+            <label className="block text-xs text-gray-500 mb-1 truncate">End Date</label>
+            <input
+              type="date"
+              value={dateRange.end}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              className="w-full px-1.5 sm:px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm"
+            />
+          </div>
+          <div className="min-w-0">
+            <label className="block text-xs text-gray-500 mb-1 truncate">Group By</label>
+            <select
+              value={groupBy}
+              onChange={(e) => setGroupBy(e.target.value)}
+              className="w-full px-1.5 sm:px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm bg-white"
+            >
+              <option value="day">Daily</option>
+              <option value="week">Weekly</option>
+              <option value="month">Monthly</option>
+            </select>
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-md overflow-hidden">
-        <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
-          <h3 className="text-sm sm:text-base font-semibold text-gray-800">Demo Activity Report</h3>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Demo Activity Report</h3>
         </div>
         <DemoReportTable rows={reportData} loading={isLoading} />
       </div>

@@ -1,7 +1,7 @@
 import React from 'react';
 import { FollowupCard } from './FollowupCard';
 
-export function FollowupList({ followups, loading, emptyLabel, onOpenContact, onComplete }) {
+export function FollowupList({ followups, loading, emptyLabel, onOpenContact, onComplete, onEdit, onDelete }) {
   if (loading) {
     return (
       <div className="text-center py-12 text-gray-600">
@@ -32,6 +32,8 @@ export function FollowupList({ followups, loading, emptyLabel, onOpenContact, on
           followup={followup}
           onOpenContact={onOpenContact}
           onComplete={onComplete}
+          onEdit={onEdit}
+          onDelete={onDelete}
         />
       ))}
     </div>

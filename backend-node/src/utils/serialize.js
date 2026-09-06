@@ -50,6 +50,11 @@ function pickFollowUp(doc) {
     notes: doc.notes ?? null,
     status: doc.status ?? 'pending',
     created_at: doc.created_at,
+    // backend-node-only addition (see backend-node/CLAUDE.md exception) —
+    // set by PUT /followups/:id/complete; used by the contact-scoped
+    // GET /followups?contact_id= to sort completed items by when they
+    // actually finished rather than when they were originally scheduled.
+    completed_at: doc.completed_at ?? null,
     notified: doc.notified ?? false,
   };
 }
@@ -80,6 +85,10 @@ function pickActivityLog(doc) {
     action: doc.action,
     target: doc.target ?? null,
     details: doc.details ?? null,
+    // shop_name is a backend-node-only addition (see backend-node/CLAUDE.md
+    // exception) — resolved and stored at write time so the frontend never
+    // has to guess it from a partial contacts list.
+    shop_name: doc.shop_name ?? null,
     timestamp: doc.timestamp,
   };
 }

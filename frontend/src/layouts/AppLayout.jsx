@@ -62,7 +62,7 @@ export function AppLayout() {
     <div className="flex h-screen bg-gray-50">
       {/* Mobile Header */}
       <div className="lg:hidden fixed top-0 left-0 right-0 bg-indigo-700 text-white p-4 flex justify-between items-center z-50">
-        <h1 className="text-lg font-bold">SmartCRM</h1>
+        <h1 className="text-xl ">💪🏻 We'll Hit <span className='font-bold' style={{ color: '#fae100' }}>8Lakh </span>in 90days </h1>
         <button
           onClick={() => setIsMobileMenuOpen((open) => !open)}
           className="p-2 rounded-lg hover:bg-indigo-600 transition min-w-11 min-h-11 flex items-center justify-center"

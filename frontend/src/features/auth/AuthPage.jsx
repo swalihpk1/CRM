@@ -34,7 +34,7 @@ export function AuthPage() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-indigo-600 mb-2">SmartCRM</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-indigo-600 mb-2">Bookie Buddy CRM</h1>
           <p className="text-sm text-gray-600">Manage your contacts efficiently</p>
         </div>
 

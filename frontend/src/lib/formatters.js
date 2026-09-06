@@ -44,14 +44,26 @@ export function getShopName(contact, fallback = '') {
 
 export function getContactName(followup) {
   if (followup.contact) {
-    const name =
-      followup.contact.data?.name || followup.contact.data?.Name || followup.contact.phone;
+    const name = followup.contact.customer_name || followup.contact.data?.name || followup.contact.data?.Name;
     const shopName = getShopName(followup.contact);
-    return shopName ? `${shopName} (${name})` : name;
+    // Only parenthesize a real name — never fall back to repeating the
+    // phone number in brackets next to the shop name (the phone is shown
+    // on its own line already).
+    if (shopName && name) return `${shopName} (${name})`;
+    return shopName || name || followup.contact.phone;
   }
   return followup.contact_id;
 }
 
 export function getContactPhone(followup) {
   return followup.contact?.phone || 'N/A';
+}
+
+// The staff member who scheduled/created this follow-up — distinct from
+// the contact's assigned_staff (who owns the contact overall). Falls back
+// to the email's local part, matching the same convention used when
+// assigned_staff is auto-derived from an email server-side.
+export function getFollowupCreatedBy(followup) {
+  if (!followup.user_email) return null;
+  return followup.user_email.split('@')[0];
 }

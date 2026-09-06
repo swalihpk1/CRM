@@ -66,6 +66,95 @@ router.post('/users', requireAdmin, async (req, res, next) => {
   }
 });
 
+// PUT /api/users/:user_id — admin only. Backend-node-only addition, not in
+// the Python source (see backend-node/CLAUDE.md exception). Edits a
+// user's role via the generic Edit User form/modal (kept as a separate
+// route from PUT /users/:user_id/role for the newer modal to call).
+// Reuses the same "cannot demote yourself" guard as that route.
+router.put('/users/:user_id', requireAdmin, async (req, res, next) => {
+  try {
+    const { user_id } = req.params;
+    const { role, email } = req.body || {};
+
+    const user = await collections.users().findOne({ id: user_id }, { projection: { _id: 0 } });
+    if (!user) {
+      throw new ApiError(404, 'User not found');
+    }
+
+    const updateData = {};
+    if (email !== undefined && email !== user.email) {
+      if (!isValidEmail(email)) {
+        throw new ApiError(422, [{ msg: 'value is not a valid email address', loc: ['body', 'email'] }]);
+      }
+      const existingUser = await collections.users().findOne({ email });
+      if (existingUser) {
+        throw new ApiError(400, 'Email already registered');
+      }
+      updateData.email = email;
+    }
+    if (role !== undefined) {
+      if (!['staff', 'admin'].includes(role)) {
+        throw new ApiError(400, "Invalid role. Must be 'staff' or 'admin'");
+      }
+      if (user_id === req.user.id && role !== 'admin') {
+        throw new ApiError(400, 'Cannot demote yourself');
+      }
+      updateData.role = role;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      throw new ApiError(400, 'No update data provided');
+    }
+
+    await collections.users().updateOne({ id: user_id }, { $set: updateData });
+
+    const details = Object.entries(updateData)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(', ');
+    await logActivity(req.user.id, req.user.email, 'Updated user', user.email, details);
+
+    const updatedUser = await collections.users().findOne(
+      { id: user_id },
+      { projection: { _id: 0, password: 0 } }
+    );
+    res.json(updatedUser);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/users/:user_id/reset-password — admin only. Backend-node-only
+// addition, not in the Python source (see backend-node/CLAUDE.md
+// exception). The admin sets a new password directly (no email/reset-link
+// flow) — the simplest option for an admin-only user management screen
+// with no SMTP dependency.
+router.put('/users/:user_id/reset-password', requireAdmin, async (req, res, next) => {
+  try {
+    const { user_id } = req.params;
+    const { password } = req.body || {};
+
+    if (!password || typeof password !== 'string' || password.length < 1) {
+      throw new ApiError(400, 'Password is required');
+    }
+
+    const user = await collections.users().findOne({ id: user_id }, { projection: { _id: 0 } });
+    if (!user) {
+      throw new ApiError(404, 'User not found');
+    }
+
+    await collections.users().updateOne(
+      { id: user_id },
+      { $set: { password: hashPassword(password) } }
+    );
+
+    await logActivity(req.user.id, req.user.email, 'Reset user password', user.email);
+
+    res.json({ message: 'Password reset successfully' });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PUT /api/users/:user_id/role — admin only
 router.put('/users/:user_id/role', requireAdmin, async (req, res, next) => {
   try {

@@ -54,9 +54,31 @@ function addDays(date, days) {
  * used across /followups/by-date, /followups/paginated, /followups/completed.
  * Returns {start: null, end: null} for 'all' or any unrecognized filter — no
  * range is applied in that case, matching Python.
+ *
+ * fromDate/toDate (a plain date range) is a backend-node-only addition, not
+ * present in the Python source — the frontend's follow-up date filter UI
+ * resolves every quick filter (today/yesterday/last_week/etc.) to concrete
+ * dates itself and always sends just these two, never a filter keyword; the
+ * named keyword branches below stay only for the still-keyword-based
+ * /followups/by-date route and any other unmigrated caller. Checking
+ * fromDate/toDate first, independent of dateFilter, means a caller can pass
+ * a plain range without needing to also pass date_filter=custom_range.
  */
-function buildDateRange(dateFilter, customDate) {
+function buildDateRange(dateFilter, customDate, fromDate, toDate) {
   const now = new Date();
+
+  if (fromDate && toDate) {
+    try {
+      const parsedFrom = new Date(String(fromDate).replace('Z', '+00:00'));
+      const parsedTo = new Date(String(toDate).replace('Z', '+00:00'));
+      if (isNaN(parsedFrom.getTime()) || isNaN(parsedTo.getTime())) {
+        return { start: null, end: null };
+      }
+      return { start: dayStart(parsedFrom), end: dayEnd(parsedTo) };
+    } catch (e) {
+      return { start: null, end: null };
+    }
+  }
 
   if (dateFilter === 'custom' && customDate) {
     try {

@@ -4,8 +4,8 @@ export function DemoReportTable({ rows, loading }) {
   if (loading) {
     return (
       <div className="p-8 text-center">
-        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
-        <p className="mt-2 text-gray-600">Loading report data...</p>
+        <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600" />
+        <p className="mt-2 text-gray-600 text-sm">Loading report data...</p>
       </div>
     );
   }
@@ -13,7 +13,7 @@ export function DemoReportTable({ rows, loading }) {
   if (rows.length === 0) {
     return (
       <div className="p-8 text-center text-gray-500">
-        <p>No demo data found for the selected date range.</p>
+        <p className="text-sm">No demo data found for the selected date range.</p>
       </div>
     );
   }

@@ -19,11 +19,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * `hasMore` is derived from `page.length === pageSize`, matching the
  * existing backend pagination convention (no total-count in the response).
  *
+ * `enabled` (default true) gates fetching entirely — while false, no
+ * request is made (e.g. a tab that isn't the active one). Flipping it to
+ * true fetches page 0 as if params had just changed; flipping to false
+ * does not clear already-loaded items, so switching back doesn't cause a
+ * flash of the loading state if nothing else changed.
+ *
  * @param {(args: {skip:number, limit:number, params:any}, signal:AbortSignal) => Promise<any[]>} fetchPage
- * @param {{pageSize?: number, params?: any}} [options]
+ * @param {{pageSize?: number, params?: any, enabled?: boolean}} [options]
  */
 export function useInfiniteList(fetchPage, options = {}) {
-  const { pageSize = 20, params } = options;
+  const { pageSize = 20, params, enabled = true } = options;
 
   const [items, setItems] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -57,7 +63,7 @@ export function useInfiniteList(fetchPage, options = {}) {
         setHasMore(result.length === pageSize);
         pageRef.current = page;
       } catch (err) {
-        if (err?.cause?.code !== 'ERR_CANCELED' && err?.name !== 'CanceledError') {
+        if (!err?.isCanceled && err?.code !== 'ERR_CANCELED' && err?.name !== 'CanceledError') {
           setError(err);
         }
       } finally {
@@ -86,20 +92,21 @@ export function useInfiniteList(fetchPage, options = {}) {
     );
   }, []);
 
-  // Re-fetch from page 0 whenever params change (subsumes the old
-  // `useEffect(() => resetContacts(), [searchQuery, statusFilter])`).
+  // Re-fetch from page 0 whenever params change or this list becomes
+  // enabled (subsumes the old `useEffect(() => resetContacts(), [searchQuery,
+  // statusFilter])`). Disabled lists never fetch, including on mount.
   useEffect(() => {
-    reset();
-  }, [paramsKey]);
+    if (enabled) reset();
+  }, [paramsKey, enabled]);
 
   const loadMore = useCallback(() => {
-    if (!hasMore || loadingRef.current) return;
+    if (!enabled || !hasMore || loadingRef.current) return;
     loadPage(pageRef.current + 1);
-  }, [hasMore, loadPage]);
+  }, [enabled, hasMore, loadPage]);
 
   useEffect(() => {
     const node = sentinelRef.current;
-    if (!node) return;
+    if (!node || !enabled) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) loadMore();
@@ -108,7 +115,7 @@ export function useInfiniteList(fetchPage, options = {}) {
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [loadMore]);
+  }, [loadMore, enabled]);
 
   return { items, isLoading, isLoadingMore, hasMore, error, sentinelRef, reset, updateItem };
 }

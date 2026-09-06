@@ -53,7 +53,7 @@ export function useQuery(fetcher, deps, options = {}) {
       })
       .catch((err) => {
         if (requestIdRef.current !== requestId) return; // superseded/aborted
-        if (err?.cause?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') return;
+        if (err?.isCanceled || err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') return;
         setError(err);
         setIsLoading(false);
         onErrorRef.current?.(err);

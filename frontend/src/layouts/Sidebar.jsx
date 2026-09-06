@@ -7,15 +7,15 @@ import { NavLink } from 'react-router-dom';
 // AdminRoute (routes/AdminRoute.jsx) so hiding the link is not the only
 // thing standing between a non-admin and the page.
 const NAV_ITEMS = [
-  { to: '/', label: 'Dashboard', icon: '📊', end: true },
-  { to: '/contacts', label: 'Contacts', icon: '👥' },
-  { to: '/followups', label: 'Follow-ups', icon: '🔔' },
-  { to: '/meetings', label: 'Meetings', icon: '📅' },
-  { to: '/import', label: 'Import', icon: '📤', adminOnly: true },
-  { to: '/demos', label: 'Demo Reports', icon: '🎬' },
-  { to: '/activity', label: 'Activity Log', icon: '📝' },
-  { to: '/productivity', label: 'Productivity', icon: '📊', adminOnly: true },
-  { to: '/users', label: 'Users', icon: '👤', adminOnly: true },
+  { to: '/', label: 'Dashboard', icon: '', end: true },
+  { to: '/contacts', label: 'Contacts', icon: '' },
+  { to: '/followups', label: 'Follow-ups', icon: '' },
+  { to: '/meetings', label: 'Meetings', icon: '' },
+  { to: '/import', label: 'Import', icon: '', adminOnly: true },
+  { to: '/demos', label: 'Demo Reports', icon: '' },
+  { to: '/activity', label: 'Activity Log', icon: '' },
+  { to: '/productivity', label: 'Productivity', icon: '', adminOnly: true },
+  { to: '/users', label: 'Users', icon: '', adminOnly: true },
 ];
 
 const linkClass = ({ isActive }) =>
@@ -28,8 +28,8 @@ export function Sidebar({ user, onLogout, onNavigate }) {
 
   return (
     <>
-      <div className="p-6 border-b border-indigo-600">
-        <h1 className="text-lg font-bold">SmartCRM</h1>
+      <div className="p-6 text-center border-b border-indigo-600">
+        <h1 className="text-lg ">💪🏻 We'll Hit <span className='font-bold' style={{ color: '#fae100' }}>8Lakh </span>in 90days</h1>
       </div>
 
       <nav className="flex-1 p-4 space-y-2 overflow-y-auto">

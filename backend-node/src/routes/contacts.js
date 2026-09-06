@@ -9,24 +9,13 @@ const { nowIso } = require('../utils/dates');
 const { normalizePhone, digitsOnly } = require('../utils/phone');
 const { pickContact } = require('../utils/serialize');
 const { readWorkbook, cleanColumns, replaceSentinels } = require('../utils/excel');
+const { shopNameFromData } = require('../utils/shopName');
 
 const router = express.Router();
 
 // Lowercase-value -> is-blank-like set used INSIDE the import row loop.
 // Case-insensitive, deliberately distinct from excel.js's EMPTY_SENTINELS.
 const NAN_LIKE = new Set(['nan', 'none', 'null', 'na', 'n/a']);
-
-function shopNameFromData(data) {
-  if (!data) return 'Unknown Shop';
-  return (
-    data.shop_name ||
-    data.Shop_Name ||
-    data['Shop Name'] ||
-    data.shop ||
-    data.Shop ||
-    'Unknown Shop'
-  );
-}
 
 // ===== POST /contacts/import =====
 router.post('/contacts/import', upload.single('file'), requireAuth, async (req, res, next) => {
@@ -397,7 +386,8 @@ router.post('/contacts', requireAuth, async (req, res, next) => {
       req.user.email,
       'Created contact',
       contact.phone,
-      `Customer: ${customerNameLog}, Shop: ${shopName}, Phone: ${contact.phone}`
+      `Customer: ${customerNameLog}, Shop: ${shopName}, Phone: ${contact.phone}`,
+      shopName
     );
 
     res.json(pickContact(contact));
@@ -436,14 +426,20 @@ router.put('/contacts/:contact_id', requireAuth, async (req, res, next) => {
     }
     updateData.updated_at = nowIso();
 
-    if ('status' in updateData) {
-      const oldStatus = contact.status || 'None';
-      const newStatus = updateData.status;
-      if (oldStatus === 'None' && newStatus !== 'None' && !contact.assigned_staff) {
-        const staffName = req.user.email.split('@')[0];
-        updateData.assigned_staff = staffName;
-        updateData.assigned_staff_id = req.user.id;
-      }
+    // Auto-assign an unassigned contact to whoever first edits it — any
+    // field, not just a status change from None. Once assigned_staff is
+    // set, it never gets silently overwritten by a later editor (a real
+    // reassignment goes through the dedicated PUT /users/.../role-style
+    // assignment flow, not this general update route). This also drives
+    // the Productivity "Fresh Calls" metric (see backend-node/CLAUDE.md) —
+    // it counts contacts moving from unassigned to assigned, so widening
+    // the trigger from "status change" to "any edit" is intentional: any
+    // edit of a previously-untouched contact should count as a fresh call.
+    const isFreshAssignment = !contact.assigned_staff;
+    if (isFreshAssignment) {
+      const staffName = req.user.email.split('@')[0];
+      updateData.assigned_staff = staffName;
+      updateData.assigned_staff_id = req.user.id;
     }
 
     await collections.contacts().updateOne({ id: contactId }, { $set: updateData });
@@ -458,13 +454,48 @@ router.put('/contacts/:contact_id', requireAuth, async (req, res, next) => {
       'Unknown Shop';
     const customerName = updateData.customer_name || contact.customer_name || 'Unknown Customer';
 
+    // When status is one of the changed fields, surface the actual new
+    // value in the log details (e.g. "Status changed to: Interested")
+    // instead of just listing "status" among the changed field names —
+    // formatDetails()/activityFormatters.js on the frontend special-cases
+    // this "status changed to" phrasing to show it directly in the
+    // Activity Log and the ContactDetailModal's Activity panel.
+    const detailsText =
+      updateData.status !== undefined
+        ? `Customer: ${customerName}, Shop: ${shopName}, Status changed to: ${updateData.status}`
+        : `Customer: ${customerName}, Shop: ${shopName}, Fields: ${Object.keys(updateData).join(', ')}`;
+
     await logActivity(
       req.user.id,
       req.user.email,
       'Updated contact',
       contact.phone,
-      `Customer: ${customerName}, Shop: ${shopName}, Fields: ${Object.keys(updateData).join(', ')}`
+      detailsText,
+      shopName
     );
+
+    // Logged as its OWN activity entry (action: 'Assigned contact'), not
+    // folded into the 'Updated contact' details string above — the
+    // Productivity "Fresh Calls" metric (backend-node/CLAUDE.md) queries
+    // this action directly instead of regex-matching free text. The
+    // previous approach (checking for the literal substring "assigned_staff"
+    // inside 'Updated contact' details) silently broke the day the details
+    // string started saying "Status changed to: X" instead of listing
+    // "Fields: status, assigned_staff, ..." for the common case where a
+    // fresh assignment happens alongside a status change — meaning Fresh
+    // Calls under-counted for any edit that also changed status, which is
+    // the normal path. A dedicated action string can't be broken by an
+    // unrelated wording change to a different log message.
+    if (isFreshAssignment) {
+      await logActivity(
+        req.user.id,
+        req.user.email,
+        'Assigned contact',
+        contact.phone,
+        `Customer: ${customerName}, Shop: ${shopName}, Assigned to: ${updateData.assigned_staff}`,
+        shopName
+      );
+    }
 
     const updatedContact = await collections.contacts().findOne({ id: contactId }, { projection: { _id: 0 } });
     res.json(pickContact(updatedContact));
@@ -499,7 +530,8 @@ router.delete('/contacts/:contact_id', requireAuth, async (req, res, next) => {
       req.user.email,
       'Deleted contact',
       contact.phone,
-      `Customer: ${customerName}, Shop: ${shopName}, Phone: ${contact.phone}`
+      `Customer: ${customerName}, Shop: ${shopName}, Phone: ${contact.phone}`,
+      shopName
     );
 
     res.json({ message: 'Contact deleted successfully' });
@@ -523,7 +555,8 @@ router.post('/contacts/:contact_id/call', requireAuth, async (req, res, next) =>
       req.user.email,
       'Called contact',
       contact.phone,
-      `Call made at ${callTime}`
+      `Call made at ${callTime}`,
+      shopNameFromData(contact.data)
     );
 
     res.json({ message: 'Call logged successfully', call_time: callTime });

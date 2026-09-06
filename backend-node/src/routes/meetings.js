@@ -6,12 +6,17 @@ const { ApiError } = require('../middleware/errorHandler');
 const { logActivity } = require('../utils/activity');
 const { nowIso } = require('../utils/dates');
 const { pickMeeting } = require('../utils/serialize');
+const { shopNameFromData } = require('../utils/shopName');
 
 const router = express.Router();
 
 // Shared attendee/contact-lookup helper for activity-log context, used by
-// create/update/status-update/delete. Mirrors the repeated logic in the
-// Python source verbatim.
+// create/update/status-update/delete. The logTarget/attendeeDetails logic
+// mirrors the Python source verbatim; `shopName` is a backend-node-only
+// addition (see backend-node/CLAUDE.md exception) — it was always
+// possible to resolve here (targetContact is already looked up by
+// attendee phone) but was never surfaced, which is why meeting-related
+// Activity Log rows always showed no shop name.
 async function buildMeetingLogContext(meeting) {
   let targetContact = null;
   if (meeting.attendees && meeting.attendees.length > 0) {
@@ -24,6 +29,7 @@ async function buildMeetingLogContext(meeting) {
     }
   }
   const logTarget = targetContact ? targetContact.phone : meeting.title;
+  const shopName = targetContact ? shopNameFromData(targetContact.data) : null;
 
   const attendeeInfo = (meeting.attendees || []).map((a) => {
     if (a && a.phone) return `${a.name || 'Unknown'} (${a.phone})`;
@@ -31,7 +37,7 @@ async function buildMeetingLogContext(meeting) {
   });
   const attendeeDetails = attendeeInfo.length > 0 ? attendeeInfo.join(', ') : 'No attendees';
 
-  return { logTarget, attendeeDetails };
+  return { logTarget, attendeeDetails, shopName };
 }
 
 // POST /api/meetings
@@ -54,14 +60,15 @@ router.post('/meetings', requireAuth, async (req, res, next) => {
     };
     await collections.meetings().insertOne(meeting);
 
-    const { logTarget, attendeeDetails } = await buildMeetingLogContext(meeting);
+    const { logTarget, attendeeDetails, shopName } = await buildMeetingLogContext(meeting);
 
     await logActivity(
       req.user.id,
       req.user.email,
       'Created meeting',
       logTarget,
-      `Meeting: ${meeting.title}, Date: ${meeting.date} ${meeting.time || ''}, Attendees: ${attendeeDetails}`
+      `Meeting: ${meeting.title}, Date: ${meeting.date} ${meeting.time || ''}, Attendees: ${attendeeDetails}`,
+      shopName
     );
 
     res.json(pickMeeting(meeting));
@@ -98,10 +105,13 @@ router.get('/meetings', requireAuth, async (req, res, next) => {
 // preserved exactly from the Python source (not a bug to "fix").
 router.get('/meetings/:meeting_id', requireAuth, async (req, res, next) => {
   try {
-    const meeting = await collections.meetings().findOne(
-      { id: req.params.meeting_id, user_id: req.user.id },
-      { projection: { _id: 0 } }
-    );
+    // Admins can fetch any meeting by id, not just their own — a
+    // backend-node-only widening (Python scopes this to the creator even
+    // for admins; see backend-node/CLAUDE.md). Non-admins keep the
+    // original self-scoping.
+    const idQuery =
+      req.user.role === 'admin' ? { id: req.params.meeting_id } : { id: req.params.meeting_id, user_id: req.user.id };
+    const meeting = await collections.meetings().findOne(idQuery, { projection: { _id: 0 } });
     if (!meeting) throw new ApiError(404, 'Meeting not found');
     res.json(pickMeeting(meeting));
   } catch (err) {
@@ -109,14 +119,14 @@ router.get('/meetings/:meeting_id', requireAuth, async (req, res, next) => {
   }
 });
 
-// PUT /api/meetings/:meeting_id — self-scoped, same as GET single.
+// PUT /api/meetings/:meeting_id — self-scoped for non-admins; admins can
+// edit any meeting (see the GET single comment above).
 router.put('/meetings/:meeting_id', requireAuth, async (req, res, next) => {
   try {
     const meetingId = req.params.meeting_id;
-    const meeting = await collections.meetings().findOne(
-      { id: meetingId, user_id: req.user.id },
-      { projection: { _id: 0 } }
-    );
+    const idQuery =
+      req.user.role === 'admin' ? { id: meetingId } : { id: meetingId, user_id: req.user.id };
+    const meeting = await collections.meetings().findOne(idQuery, { projection: { _id: 0 } });
     if (!meeting) throw new ApiError(404, 'Meeting not found');
 
     const body = req.body || {};
@@ -134,7 +144,7 @@ router.put('/meetings/:meeting_id', requireAuth, async (req, res, next) => {
     // No updated_at — the Meeting model has no such field.
     await collections.meetings().updateOne({ id: meetingId }, { $set: updateData });
 
-    const { logTarget, attendeeDetails } = await buildMeetingLogContext(meeting);
+    const { logTarget, attendeeDetails, shopName } = await buildMeetingLogContext(meeting);
 
     let action = 'Updated meeting';
     let details = `Meeting: ${meeting.title}, Attendees: ${attendeeDetails}`;
@@ -149,7 +159,7 @@ router.put('/meetings/:meeting_id', requireAuth, async (req, res, next) => {
       details = `Meeting: ${meeting.title}, Status: ${updateData.status}, Attendees: ${attendeeDetails}`;
     }
 
-    await logActivity(req.user.id, req.user.email, action, logTarget, details);
+    await logActivity(req.user.id, req.user.email, action, logTarget, details, shopName);
 
     res.json({ message: 'Meeting updated successfully' });
   } catch (err) {
@@ -157,7 +167,8 @@ router.put('/meetings/:meeting_id', requireAuth, async (req, res, next) => {
   }
 });
 
-// PUT /api/meetings/:meeting_id/status — self-scoped.
+// PUT /api/meetings/:meeting_id/status — self-scoped for non-admins;
+// admins can update any meeting's status (see GET single comment above).
 router.put('/meetings/:meeting_id/status', requireAuth, async (req, res, next) => {
   try {
     const { status } = req.body || {};
@@ -166,15 +177,14 @@ router.put('/meetings/:meeting_id/status', requireAuth, async (req, res, next) =
     }
 
     const meetingId = req.params.meeting_id;
-    const meeting = await collections.meetings().findOne(
-      { id: meetingId, user_id: req.user.id },
-      { projection: { _id: 0 } }
-    );
+    const idQuery =
+      req.user.role === 'admin' ? { id: meetingId } : { id: meetingId, user_id: req.user.id };
+    const meeting = await collections.meetings().findOne(idQuery, { projection: { _id: 0 } });
     if (!meeting) throw new ApiError(404, 'Meeting not found');
 
     await collections.meetings().updateOne({ id: meetingId }, { $set: { status } });
 
-    const { logTarget, attendeeDetails } = await buildMeetingLogContext(meeting);
+    const { logTarget, attendeeDetails, shopName } = await buildMeetingLogContext(meeting);
 
     let action;
     if (status === 'completed') action = 'Completed meeting';
@@ -186,7 +196,8 @@ router.put('/meetings/:meeting_id/status', requireAuth, async (req, res, next) =
       req.user.email,
       action,
       logTarget,
-      `Meeting: ${meeting.title}, Date: ${meeting.date || ''} ${meeting.time || ''}, Attendees: ${attendeeDetails}`
+      `Meeting: ${meeting.title}, Date: ${meeting.date || ''} ${meeting.time || ''}, Attendees: ${attendeeDetails}`,
+      shopName
     );
 
     res.json({ message: `Meeting status updated to ${status}` });
@@ -195,17 +206,17 @@ router.put('/meetings/:meeting_id/status', requireAuth, async (req, res, next) =
   }
 });
 
-// DELETE /api/meetings/:meeting_id — self-scoped.
+// DELETE /api/meetings/:meeting_id — self-scoped for non-admins; admins
+// can delete any meeting (see GET single comment above).
 router.delete('/meetings/:meeting_id', requireAuth, async (req, res, next) => {
   try {
     const meetingId = req.params.meeting_id;
-    const meeting = await collections.meetings().findOne(
-      { id: meetingId, user_id: req.user.id },
-      { projection: { _id: 0 } }
-    );
+    const idQuery =
+      req.user.role === 'admin' ? { id: meetingId } : { id: meetingId, user_id: req.user.id };
+    const meeting = await collections.meetings().findOne(idQuery, { projection: { _id: 0 } });
     if (!meeting) throw new ApiError(404, 'Meeting not found');
 
-    const { logTarget, attendeeDetails } = await buildMeetingLogContext(meeting);
+    const { logTarget, attendeeDetails, shopName } = await buildMeetingLogContext(meeting);
 
     await collections.meetings().deleteOne({ id: meetingId });
 
@@ -214,7 +225,8 @@ router.delete('/meetings/:meeting_id', requireAuth, async (req, res, next) => {
       req.user.email,
       'Deleted meeting',
       logTarget,
-      `Meeting: ${meeting.title}, Date: ${meeting.date || ''} ${meeting.time || ''}, Attendees: ${attendeeDetails}`
+      `Meeting: ${meeting.title}, Date: ${meeting.date || ''} ${meeting.time || ''}, Attendees: ${attendeeDetails}`,
+      shopName
     );
 
     res.json({ message: 'Meeting deleted successfully' });

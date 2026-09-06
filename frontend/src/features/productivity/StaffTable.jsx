@@ -1,4 +1,5 @@
 import React from 'react';
+import { Crown, User } from 'lucide-react';
 
 const METRIC_BUTTONS = [
   { key: 'fresh_calls', metric: 'calls', label: 'Fresh Calls', color: 'text-blue-600 hover:text-blue-800' },
@@ -7,10 +8,24 @@ const METRIC_BUTTONS = [
   { key: 'meetings_created', metric: 'meetings', label: 'Meetings', color: 'text-purple-600 hover:text-purple-800' },
 ];
 
+function RoleBadge({ role }) {
+  const isAdmin = role === 'admin';
+  const Icon = isAdmin ? Crown : User;
+  return (
+    <span
+      className={`px-2 py-1 inline-flex items-center gap-1 text-xs font-semibold rounded-full border ${
+        isAdmin ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-blue-50 text-blue-700 border-blue-200'
+      }`}
+    >
+      <Icon size={11} /> {isAdmin ? 'Admin' : 'Staff'}
+    </span>
+  );
+}
+
 export function StaffTable({ staffData, onMetricClick }) {
   if (staffData.length === 0) {
     return (
-      <div className="bg-white rounded-xl shadow-md p-12 text-center text-gray-500">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center text-gray-500 text-sm">
         No productivity data available for the selected period.
       </div>
     );
@@ -21,42 +36,39 @@ export function StaffTable({ staffData, onMetricClick }) {
       {/* Mobile: stacked cards */}
       <div className="lg:hidden space-y-3">
         {staffData.map((staff) => (
-          <div key={staff.user_id} className="bg-white rounded-xl shadow-md p-4">
-            <div className="flex justify-between items-start mb-3">
+          <div key={staff.user_id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-3">
+            <div className="flex justify-between items-start mb-2.5">
               <div>
                 <p className="text-sm font-medium text-gray-900">{staff.user_name}</p>
                 <p className="text-xs text-gray-500">{staff.user_email}</p>
               </div>
-              <span
-                className={`px-2 py-1 inline-flex text-xs font-semibold rounded-full ${
-                  staff.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                }`}
-              >
-                {staff.role === 'admin' ? '👑 Admin' : '👤 Staff'}
-              </span>
+              <RoleBadge role={staff.role} />
             </div>
-            <div className="grid grid-cols-2 gap-3 text-center">
+            <div className="grid grid-cols-2 gap-2 text-center">
               {METRIC_BUTTONS.map((btn) => (
                 <button
                   key={btn.key}
                   onClick={() => onMetricClick(staff.user_id, staff.user_name, btn.metric)}
                   className={`p-2 rounded-lg bg-gray-50 ${btn.color}`}
                 >
-                  <div className="text-base font-semibold">{staff[btn.key]}</div>
+                  <div className="text-sm font-semibold">{staff[btn.key]}</div>
                   <div className="text-xs text-gray-500">{btn.label}</div>
                 </button>
               ))}
-              <div className="p-2 rounded-lg bg-gray-50 col-span-2">
-                <div className="text-base font-semibold text-teal-600">{staff.followups_completed}</div>
+              <button
+                onClick={() => onMetricClick(staff.user_id, staff.user_name, 'followups_completed')}
+                className="p-2 rounded-lg bg-gray-50 text-teal-600 hover:text-teal-800 col-span-2"
+              >
+                <div className="text-sm font-semibold">{staff.followups_completed}</div>
                 <div className="text-xs text-gray-500">Follow-ups Completed</div>
-              </div>
+              </button>
             </div>
           </div>
         ))}
       </div>
 
       {/* Tablet/desktop: table */}
-      <div className="hidden lg:block bg-white rounded-xl shadow-md overflow-hidden">
+      <div className="hidden lg:block bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b">
@@ -79,18 +91,12 @@ export function StaffTable({ staffData, onMetricClick }) {
                     <div className="text-xs text-gray-500">{staff.user_email}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span
-                      className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        staff.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                      }`}
-                    >
-                      {staff.role === 'admin' ? '👑 Admin' : '👤 Staff'}
-                    </span>
+                    <RoleBadge role={staff.role} />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <button
                       onClick={() => onMetricClick(staff.user_id, staff.user_name, 'calls')}
-                      className="text-lg font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+                      className="text-sm font-semibold text-blue-600 hover:text-blue-800 hover:underline"
                     >
                       {staff.fresh_calls}
                     </button>
@@ -98,29 +104,34 @@ export function StaffTable({ staffData, onMetricClick }) {
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <button
                       onClick={() => onMetricClick(staff.user_id, staff.user_name, 'followups')}
-                      className="text-lg font-semibold text-green-600 hover:text-green-800 hover:underline"
+                      className="text-sm font-semibold text-green-600 hover:text-green-800 hover:underline"
                     >
                       {staff.followups_created}
                     </button>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <span className="text-lg font-semibold text-teal-600">{staff.followups_completed}</span>
+                    <button
+                      onClick={() => onMetricClick(staff.user_id, staff.user_name, 'followups_completed')}
+                      className="text-sm font-semibold text-teal-600 hover:text-teal-800 hover:underline"
+                    >
+                      {staff.followups_completed}
+                    </button>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <button
                       onClick={() => onMetricClick(staff.user_id, staff.user_name, 'demos')}
-                      className="text-lg font-semibold text-orange-600 hover:text-orange-800 hover:underline"
+                      className="text-sm font-semibold text-orange-600 hover:text-orange-800 hover:underline"
                     >
                       {staff.demos_given}
                     </button>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <span className="text-lg font-semibold text-indigo-600">{staff.demos_watched}</span>
+                    <span className="text-sm font-semibold text-indigo-600">{staff.demos_watched}</span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <button
                       onClick={() => onMetricClick(staff.user_id, staff.user_name, 'meetings')}
-                      className="text-lg font-semibold text-purple-600 hover:text-purple-800 hover:underline"
+                      className="text-sm font-semibold text-purple-600 hover:text-purple-800 hover:underline"
                     >
                       {staff.meetings_created}
                     </button>

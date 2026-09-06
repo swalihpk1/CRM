@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { X, CalendarPlus } from 'lucide-react';
 import * as meetingsApi from '../../api/meetings';
 import { useQuery } from '../../hooks/useQuery';
 import { useMutation } from '../../hooks/useMutation';
@@ -11,7 +12,7 @@ import { RescheduleModal } from './RescheduleModal';
 import { filterMeetingsByDate, filterMeetingsBySearch } from './useMeetingFilters';
 
 const DATE_FILTERS = [
-  { key: 'all', label: 'All Meetings' },
+  { key: 'all', label: 'All' },
   { key: 'today', label: 'Today' },
   { key: 'tomorrow', label: 'Tomorrow' },
   { key: 'this-week', label: 'This Week' },
@@ -23,6 +24,7 @@ export function MeetingsPage() {
   const customDate = searchParams.get('date') || '';
   const [searchQuery, setSearchQuery] = useState('');
   const [rescheduleTarget, setRescheduleTarget] = useState(null);
+  const [showCustomDate, setShowCustomDate] = useState(false);
   const confirm = useConfirm();
   const { openMeetingScheduler } = useMeetingScheduler();
 
@@ -83,91 +85,102 @@ export function MeetingsPage() {
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-6">
+      <div className="flex flex-row justify-between items-center gap-3 mt-2 mb-4 lg:mb-6">
         <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-800">Meetings</h2>
         <button
           onClick={() => openMeetingScheduler([])}
-          className="px-6 py-3 sm:py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold min-h-11"
+          className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold text-xs sm:text-sm shrink-0 touch-manipulation"
         >
           + Schedule Meeting
         </button>
       </div>
 
-      <div className="bg-white rounded-xl shadow-md p-4 mb-4">
-        <div className="flex items-center gap-4">
+      <div className="mb-4">
+        <div className="flex items-center gap-2">
           <input
             type="text"
             placeholder="Search meetings by title, location, notes, or attendees..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-base"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="px-3 py-2 text-gray-500 hover:text-gray-700 transition min-w-11 min-h-11"
+              className="px-2 py-2 text-gray-400 hover:text-gray-600 transition min-w-9 min-h-9"
               title="Clear search"
             >
-              ✕
+              <X size={16} />
             </button>
           )}
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-md p-4 mb-6 flex flex-col sm:flex-row flex-wrap gap-4">
-        <div className="flex gap-2 items-center flex-wrap">
+      <div className="mb-4">
+        <div className="flex flex-wrap gap-1.5">
           {DATE_FILTERS.map((f) => (
             <button
               key={f.key}
               onClick={() => setDateFilter(f.key)}
-              className={`px-4 py-2 rounded-lg transition min-h-11 ${
-                dateFilter === f.key
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition min-h-8 ${
+                dateFilter === f.key && !customDate
                   ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
               {f.label}
             </button>
           ))}
+          <button
+            onClick={() => setShowCustomDate((v) => !v)}
+            className={`px-2.5 py-1 rounded-md text-xs font-medium transition min-h-8 ${
+              customDate ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Custom
+          </button>
         </div>
-        <div className="flex gap-2 items-center sm:ml-auto">
-          <input
-            type="date"
-            value={customDate}
-            onChange={(e) => setCustomDate(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-          />
-          {customDate && (
-            <button
-              onClick={() => setCustomDate('')}
-              className="text-gray-500 hover:text-gray-700 min-w-11 min-h-11"
-              title="Clear custom date"
-            >
-              ✕
-            </button>
-          )}
-        </div>
+
+        {showCustomDate && (
+          <div className="flex items-center gap-2 mt-2">
+            <input
+              type="date"
+              value={customDate}
+              onChange={(e) => setCustomDate(e.target.value)}
+              className="px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm"
+            />
+            {customDate && (
+              <button
+                onClick={() => setCustomDate('')}
+                className="text-gray-400 hover:text-gray-600 min-w-8 min-h-8 flex items-center justify-center"
+                title="Clear custom date"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {isLoading ? (
-        <div className="text-center py-12 text-gray-600">Loading meetings...</div>
+        <div className="text-center py-12 text-gray-600 text-sm">Loading meetings...</div>
       ) : meetings.length === 0 ? (
         <div className="bg-white rounded-xl shadow-md p-8 text-center">
-          <div className="text-6xl mb-4">📅</div>
-          <h3 className="text-base sm:text-lg font-semibold text-gray-700 mb-2">No Meetings Scheduled</h3>
-          <p className="text-gray-500 mb-6">Schedule your first meeting to get started</p>
+          <CalendarPlus size={40} className="mx-auto mb-3 text-gray-300" />
+          <h3 className="text-sm sm:text-base font-semibold text-gray-700 mb-1">No Meetings Scheduled</h3>
+          <p className="text-gray-500 text-sm mb-4">Schedule your first meeting to get started</p>
           <button
             onClick={() => openMeetingScheduler([])}
-            className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold min-h-11"
+            className="px-4 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-100 transition font-medium text-sm min-h-9"
           >
             + Schedule Meeting
           </button>
         </div>
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-xl shadow-md p-6 text-center">
-          <div className="text-4xl mb-3">📅</div>
-          <h3 className="text-base font-semibold text-gray-700 mb-2">No Meetings Found</h3>
-          <p className="text-gray-500">
+          <CalendarPlus size={32} className="mx-auto mb-2 text-gray-300" />
+          <h3 className="text-sm font-semibold text-gray-700 mb-1">No Meetings Found</h3>
+          <p className="text-gray-500 text-sm">
             {searchQuery
               ? `No meetings match "${searchQuery}"`
               : 'No meetings scheduled for the selected date filter'}
@@ -175,7 +188,7 @@ export function MeetingsPage() {
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="mt-3 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition min-h-11"
+              className="mt-3 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm min-h-8"
             >
               Clear Search
             </button>

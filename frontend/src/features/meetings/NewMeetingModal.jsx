@@ -1,9 +1,19 @@
 import React, { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 import { toast } from '../../components/ui/sonner';
 import * as meetingsApi from '../../api/meetings';
 import { useMutation } from '../../hooks/useMutation';
 import { useContactSearch } from '../contacts/useContactSearch';
 import { getShopName } from '../../lib/formatters';
+
+/** Small uppercase section label used consistently across every section. */
+function SectionHeading({ children }) {
+  return (
+    <div className="mb-3 pb-2 border-b border-gray-100">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{children}</h3>
+    </div>
+  );
+}
 
 /**
  * Merged replacement for the old GlobalMeetingModal (used from
@@ -20,8 +30,7 @@ import { getShopName } from '../../lib/formatters';
  */
 export function NewMeetingModal({ open, preselectedContacts = [], onClose }) {
   const [title, setTitle] = useState('');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
+  const [dateTime, setDateTime] = useState('');
   const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
   const [selectedContacts, setSelectedContacts] = useState(preselectedContacts);
@@ -36,8 +45,7 @@ export function NewMeetingModal({ open, preselectedContacts = [], onClose }) {
 
   const resetForm = () => {
     setTitle('');
-    setDate('');
-    setTime('');
+    setDateTime('');
     setLocation('');
     setNotes('');
     setSelectedContacts([]);
@@ -62,10 +70,12 @@ export function NewMeetingModal({ open, preselectedContacts = [], onClose }) {
   };
 
   const handleSave = () => {
-    if (!title || !date || selectedContacts.length === 0) {
+    if (!title || !dateTime || selectedContacts.length === 0) {
       toast.error('Please fill in all required fields and select at least one contact.');
       return;
     }
+
+    const [date, time] = dateTime.split('T');
 
     createMeeting({
       title,
@@ -95,77 +105,71 @@ export function NewMeetingModal({ open, preselectedContacts = [], onClose }) {
           <h2 className="text-base sm:text-xl font-bold text-gray-800">Schedule New Meeting</h2>
           <button
             onClick={handleClose}
-            className="text-gray-500 hover:text-gray-700 text-2xl min-w-11 min-h-11 flex items-center justify-center"
+            className="text-gray-400 hover:text-gray-600 min-w-11 min-h-11 flex items-center justify-center"
           >
-            &times;
+            <X size={20} />
           </button>
         </div>
 
         <div className="p-4 sm:p-6 space-y-6">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Meeting Title *</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-base"
-                placeholder="e.g., Product Demo, Contract Discussion"
-                required
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Meeting Details */}
+          <div>
+            <SectionHeading>Meeting Details</SectionHeading>
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+                <label className="block text-xs text-gray-500 mb-1">Meeting Title *</label>
                 <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-base"
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1 font-medium text-base"
+                  placeholder="e.g., Product Demo, Contract Discussion"
                   required
                 />
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
+                <label className="block text-xs text-gray-500 mb-1">Date &amp; Time *</label>
                 <input
-                  type="time"
-                  value={time}
-                  onChange={(e) => setTime(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-base"
+                  type="datetime-local"
+                  value={dateTime}
+                  onChange={(e) => setDateTime(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1 font-medium text-base"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Location</label>
+                <input
+                  type="text"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1 font-medium text-base"
+                  placeholder="e.g., Office, Zoom link, etc."
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Notes</label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mt-1 font-medium text-base resize-y"
+                  rows="3"
+                  placeholder="Meeting agenda, things to prepare, etc."
                 />
               </div>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-              <input
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-base"
-                placeholder="e.g., Office, Zoom link, etc."
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-base"
-                rows="3"
-                placeholder="Meeting agenda, things to prepare, etc."
-              />
-            </div>
           </div>
 
-          <div className="border-t pt-6">
-            <h3 className="text-sm sm:text-base font-semibold mb-3">Attendees *</h3>
+          {/* Attendees */}
+          <div>
+            <SectionHeading>Attendees *</SectionHeading>
 
             {selectedContacts.length > 0 && (
               <div className="mb-4">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Selected:</h4>
+                <p className="text-xs text-gray-500 mb-2">Selected</p>
                 <div className="flex flex-wrap gap-2">
                   {selectedContacts.map((contact) => (
                     <div
@@ -193,12 +197,12 @@ export function NewMeetingModal({ open, preselectedContacts = [], onClose }) {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search contacts by name, shop, or phone…"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-base"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-base"
               />
             </div>
 
             {searching && results.length > 0 && (
-              <div className="max-h-60 overflow-y-auto border rounded-lg divide-y">
+              <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg divide-y">
                 {results.map((contact) => {
                   const isSelected = selectedContacts.some((c) => c.id === contact.id);
                   const shopName = getShopName(contact);
@@ -220,7 +224,7 @@ export function NewMeetingModal({ open, preselectedContacts = [], onClose }) {
                           className="mr-3 h-4 w-4 text-indigo-600 border-gray-300 rounded"
                         />
                         <div>
-                          {shopName && <p className="font-medium text-gray-800">{shopName}</p>}
+                          {shopName && <p className="font-medium text-gray-800 text-sm">{shopName}</p>}
                           {contactName && <p className="text-sm text-gray-600">{contactName}</p>}
                           <p className="text-sm text-gray-600">{contact.phone}</p>
                         </div>
@@ -232,23 +236,23 @@ export function NewMeetingModal({ open, preselectedContacts = [], onClose }) {
             )}
 
             {searching && results.length === 0 && (
-              <div className="text-center py-4 text-gray-500">
+              <div className="text-center py-4 text-gray-500 text-sm">
                 No contacts found matching "{query}"
               </div>
             )}
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t">
+          <div className="flex flex-wrap gap-2 pt-4 border-t border-gray-100">
             <button
               onClick={handleClose}
-              className="flex-1 px-4 py-3 sm:py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition font-semibold min-h-11"
+              className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition font-medium text-sm min-h-9"
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
               disabled={isPending}
-              className="flex-1 px-4 py-3 sm:py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold min-h-11 disabled:opacity-60"
+              className="ml-auto px-4 py-2 border border-indigo-200 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 transition font-medium text-sm min-h-9 disabled:opacity-60"
             >
               {isPending ? 'Scheduling…' : 'Schedule Meeting'}
             </button>

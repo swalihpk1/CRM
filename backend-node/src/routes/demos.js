@@ -6,7 +6,7 @@ const { ApiError } = require('../middleware/errorHandler');
 const { logActivity } = require('../utils/activity');
 const { nowIso, parseIsoStrict } = require('../utils/dates');
 const { pickDemo } = require('../utils/serialize');
-const { shopNameFromData } = require('./contacts');
+const { shopNameFromData } = require('../utils/shopName');
 
 const router = express.Router();
 
@@ -39,7 +39,8 @@ router.post('/demos', requireAuth, async (req, res, next) => {
       req.user.email,
       'Demo given',
       contact.phone,
-      `Shop: ${shopName}, Given at: ${demo.given_at}`
+      `Shop: ${shopName}, Given at: ${demo.given_at}`,
+      shopName
     );
 
     res.json(pickDemo(demo));
@@ -77,7 +78,8 @@ router.put('/demos/:demo_id/watched', requireAuth, async (req, res, next) => {
         req.user.email,
         'Demo watched',
         contact.phone,
-        `Shop: ${shopName}, Watched at: ${watchedAt}`
+        `Shop: ${shopName}, Watched at: ${watchedAt}`,
+        shopName
       );
     }
 

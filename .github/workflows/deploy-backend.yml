@@ -31,12 +31,13 @@ jobs:
             git checkout main
             git reset --hard origin/main
 
-            echo "Using Node:"
-            /root/.nvm/versions/node/v22.23.2/bin/node -v
+            echo "Using production Node:"
+            sudo -n /root/.nvm/versions/node/v22.23.2/bin/node -v
+            sudo -n /root/.nvm/versions/node/v22.23.2/bin/npm -v
 
             echo "Installing dependencies..."
             cd backend-node
-            /root/.nvm/versions/node/v22.23.2/bin/npm install --omit=dev
+            sudo -n /root/.nvm/versions/node/v22.23.2/bin/npm install --omit=dev
 
             echo "Restarting PM2..."
             sudo -n /root/.nvm/versions/node/v22.23.2/bin/pm2 restart crm-backend-node

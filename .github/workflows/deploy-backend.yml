@@ -1,21 +1,18 @@
 name: Deploy backend-node to EC2
 
-# Frontend deploys are handled entirely by Vercel's own GitHub integration
-# (already automatic on push to main) — this workflow ONLY deploys
-# backend-node, the Node/Express API that replaced the old Python backend
-# (see backend-node/CLAUDE.md). backend/ (Python) is frozen and never
-# deployed by this workflow.
 on:
   push:
     branches: [main]
     paths:
       - 'backend-node/**'
       - '.github/workflows/deploy-backend.yml'
-  workflow_dispatch: {} # allows a manual re-run from the Actions tab
+
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
@@ -23,18 +20,28 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+
           script: |
             set -e
-            # The repo at /home/ec2-user/CRM is owned by ec2-user (the real
-            # SSH login user), but the pm2 daemon running crm-backend-node
-            # was started under root (see backend-node/CLAUDE.md deploy
-            # notes) — pm2 processes are strictly per-user, so restarting it
-            # requires sudo here even though the git/npm steps don't.
+
             cd /home/ec2-user/CRM
+
+            echo "Updating repository..."
             git fetch origin
             git checkout main
             git reset --hard origin/main
+
+            echo "Using Node:"
+            /root/.nvm/versions/node/v22.23.2/bin/node -v
+
+            echo "Installing dependencies..."
             cd backend-node
-            npm install --omit=dev
-            sudo -n pm2 restart crm-backend-node
-            sudo -n pm2 save
+            /root/.nvm/versions/node/v22.23.2/bin/npm install --omit=dev
+
+            echo "Restarting PM2..."
+            sudo -n /root/.nvm/versions/node/v22.23.2/bin/pm2 restart crm-backend-node
+
+            echo "Saving PM2..."
+            sudo -n /root/.nvm/versions/node/v22.23.2/bin/pm2 save
+
+            echo "Deployment completed successfully."

@@ -317,44 +317,61 @@ export function FollowUpsPage() {
                 <h3 className="text-sm font-semibold text-red-700 mb-3">
                   Overdue ({pendingMeta.overdue_count})
                 </h3>
-                <FollowupList
-                  followups={overdueList.items}
-                  loading={overdueList.isLoading}
-                  emptyLabel={`No overdue follow-ups for ${dateLabel}`}
-                  onOpenContact={openContact}
-                  onComplete={setCompletingFollowup}
-                  onEdit={handleEditFollowup}
-                  onDelete={handleDeleteFollowup}
-                />
-                <div ref={overdueList.sentinelRef} />
-                {overdueList.isLoadingMore && (
-                  <div className="text-center py-4 text-gray-500 text-sm">Loading more…</div>
-                )}
-                {!overdueList.isLoading && !overdueList.hasMore && overdueList.items.length > 0 && (
-                  <div className="text-center py-3 text-gray-400 text-sm">No more overdue follow-ups</div>
-                )}
+                {/* Bounded, independently-scrolling box — not just a plain
+                    div in the page flow. Two lists sharing one page-level
+                    scroll meant whichever list's sentinel scrolled further
+                    from the viewport (the one rendered first, as it grows
+                    past a screen of content) could end up sitting outside
+                    IntersectionObserver's root+rootMargin box entirely and
+                    simply stop re-triggering — Overdue could silently stop
+                    paginating past ~2 pages while Pending (further down,
+                    so its sentinel stayed near the bottom of the scroll)
+                    kept working. Giving each section its own scroll area
+                    means each section's sentinel is always right at ITS
+                    OWN bottom edge, independent of the other section's
+                    height. */}
+                <div className="max-h-[420px] overflow-y-auto pr-1">
+                  <FollowupList
+                    followups={overdueList.items}
+                    loading={overdueList.isLoading}
+                    emptyLabel={`No overdue follow-ups for ${dateLabel}`}
+                    onOpenContact={openContact}
+                    onComplete={setCompletingFollowup}
+                    onEdit={handleEditFollowup}
+                    onDelete={handleDeleteFollowup}
+                  />
+                  <div ref={overdueList.sentinelRef} />
+                  {overdueList.isLoadingMore && (
+                    <div className="text-center py-4 text-gray-500 text-sm">Loading more…</div>
+                  )}
+                  {!overdueList.isLoading && !overdueList.hasMore && overdueList.items.length > 0 && (
+                    <div className="text-center py-3 text-gray-400 text-sm">No more overdue follow-ups</div>
+                  )}
+                </div>
               </div>
 
               <div>
                 <h3 className="text-sm font-semibold text-yellow-700 mb-3 pt-4 border-t border-gray-100">
                   Pending ({pendingMeta.pending_count})
                 </h3>
-                <FollowupList
-                  followups={pendingOnlyList.items}
-                  loading={pendingOnlyList.isLoading}
-                  emptyLabel={`No pending follow-ups for ${dateLabel}`}
-                  onOpenContact={openContact}
-                  onComplete={setCompletingFollowup}
-                  onEdit={handleEditFollowup}
-                  onDelete={handleDeleteFollowup}
-                />
-                <div ref={pendingOnlyList.sentinelRef} />
-                {pendingOnlyList.isLoadingMore && (
-                  <div className="text-center py-4 text-gray-500 text-sm">Loading more…</div>
-                )}
-                {!pendingOnlyList.isLoading && !pendingOnlyList.hasMore && pendingOnlyList.items.length > 0 && (
-                  <div className="text-center py-3 text-gray-400 text-sm">No more pending follow-ups</div>
-                )}
+                <div className="max-h-[420px] overflow-y-auto pr-1">
+                  <FollowupList
+                    followups={pendingOnlyList.items}
+                    loading={pendingOnlyList.isLoading}
+                    emptyLabel={`No pending follow-ups for ${dateLabel}`}
+                    onOpenContact={openContact}
+                    onComplete={setCompletingFollowup}
+                    onEdit={handleEditFollowup}
+                    onDelete={handleDeleteFollowup}
+                  />
+                  <div ref={pendingOnlyList.sentinelRef} />
+                  {pendingOnlyList.isLoadingMore && (
+                    <div className="text-center py-4 text-gray-500 text-sm">Loading more…</div>
+                  )}
+                  {!pendingOnlyList.isLoading && !pendingOnlyList.hasMore && pendingOnlyList.items.length > 0 && (
+                    <div className="text-center py-3 text-gray-400 text-sm">No more pending follow-ups</div>
+                  )}
+                </div>
               </div>
             </div>
           ) : (

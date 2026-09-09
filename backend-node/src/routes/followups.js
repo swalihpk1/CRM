@@ -345,10 +345,19 @@ router.get('/followups/paginated', requireAuth, async (req, res, next) => {
         { id: followup.contact_id },
         { projection: { _id: 0 } }
       );
-      if (contact) {
-        followup.contact = contact;
-        result.push(followup);
-      }
+      // Backend-node fix, not in the Python source: a followup whose
+      // contact was since deleted used to be silently DROPPED from
+      // `result` entirely, while still being counted in `skip`/`limit` at
+      // the DB-query level. That desynced the returned page's length from
+      // how many documents were actually consumed — the frontend's
+      // useInfiniteList derives `hasMore` from `page.length === pageSize`,
+      // so any page containing even one orphaned-contact followup returned
+      // a short page and permanently (and wrongly) looked like "the last
+      // page," silently truncating pagination for the rest of that list.
+      // Matches /followups/upcoming's existing behavior instead (embeds
+      // `contact: null` and keeps the item) rather than dropping it.
+      followup.contact = contact || null;
+      result.push(followup);
     }
 
     // total_count/overdue_count are backend-node-only additions (not in
@@ -409,10 +418,14 @@ router.get('/followups/completed', requireAuth, async (req, res, next) => {
         { id: followup.contact_id },
         { projection: { _id: 0 } }
       );
-      if (contact) {
-        followup.contact = contact;
-        result.push(followup);
-      }
+      // Backend-node fix, not in the Python source — see the matching
+      // comment on /followups/paginated: dropping an orphaned-contact
+      // followup here desynced this page's returned length from what was
+      // actually skip/limit-ed at the DB level, silently truncating
+      // useInfiniteList's pagination for the Completed tab whenever a page
+      // happened to contain one. Keep the item with contact: null instead.
+      followup.contact = contact || null;
+      result.push(followup);
     }
 
     // total_count is a backend-node-only addition (not in Python's response

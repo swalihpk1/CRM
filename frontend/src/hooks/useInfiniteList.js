@@ -107,11 +107,32 @@ export function useInfiniteList(fetchPage, options = {}) {
   useEffect(() => {
     const node = sentinelRef.current;
     if (!node || !enabled) return;
+
+    // IntersectionObserver's default `root: null` means "the browser
+    // viewport" — but this app's actual scrollable area is a nested
+    // `overflow-auto`/`overflow-y-auto` div (see layouts/AppLayout.jsx),
+    // not the window. With no `root` set, the observer only re-evaluates
+    // intersection when the SENTINEL'S POSITION RELATIVE TO THE VIEWPORT
+    // changes — which barely happens when the user scrolls the inner div
+    // (the window itself never moves), so it fires once for the first
+    // page (whatever happened to already be in the viewport on mount) and
+    // then never again. This was the root cause of "only shows the
+    // initial page, doesn't paginate further" on any list whose scroll
+    // container isn't the window — walk up to the nearest scrollable
+    // ancestor and use that as `root` instead.
+    let root = node.parentElement;
+    while (root && root !== document.body) {
+      const style = window.getComputedStyle(root);
+      if (/(auto|scroll)/.test(style.overflowY)) break;
+      root = root.parentElement;
+    }
+    if (!root || root === document.body) root = null; // fall back to viewport
+
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) loadMore();
       },
-      { rootMargin: '300px' }
+      { root, rootMargin: '300px' }
     );
     observer.observe(node);
     return () => observer.disconnect();
